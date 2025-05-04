@@ -1,0 +1,38 @@
+.vscode/**
+.vscode-test.*
+.vscode-test/**
+.gitattributes
+.github/**
+.gitignore
+src/**
+out/** # Ignore old compile output
+node_modules/** # Ignore node_modules initially
+
+# KEEP BUNDLE OUTPUT
+!dist/** 
+
+# KEEP NATIVE MODULES COPIED BY ASSET RELOCATOR
+# This assumes the loader copies them into dist/native_modules
+# Adjust if the loader configuration places them elsewhere.
+!dist/native_modules/**/*.node
+
+# KEEP RUNTIME DEPENDENCIES (if asset relocator doesn't copy everything)
+# We marked speech-recorder as external, so keep it
+!node_modules/speech-recorder/** 
+!node_modules/bindings/** # Often needed by native modules
+!node_modules/node-addon-api/** # Often needed by native modules
+
+# KEEP other essential files
+!package.json
+!README.md
+!LICENSE
+!CHANGELOG.md
+!media/**
+
+# Exclude development/build files
+*.map
+*.tsbuildinfo
+tsconfig.json
+eslint.config.mjs
+webpack.config.js
+*.vsix
