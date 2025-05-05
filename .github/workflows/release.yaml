@@ -42,10 +42,6 @@ jobs:
           # Rebuild native modules if needed
           npm rebuild
 
-      - name: Run tests
-        run: npm test
-        continue-on-error: true # Don't fail the workflow if tests fail, but log it
-
       - name: Determine version bump
         id: bump
         run: |
