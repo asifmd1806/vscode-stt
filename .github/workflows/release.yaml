@@ -107,6 +107,9 @@ jobs:
           echo "Running prepublish script (includes webpack build)..."
           npm run vscode:prepublish
           
+          echo "Creating VSIX package..."
+          npx @vscode/vsce package
+          
           # Verify VSIX was created
           VSIX_COUNT=$(ls -1 *.vsix 2>/dev/null | wc -l)
           if [ "$VSIX_COUNT" -eq "0" ]; then
