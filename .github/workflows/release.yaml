@@ -133,7 +133,7 @@ jobs:
           fi
           
           # List contents (this will fail if VSIX is corrupt)
-          npx @vscode/vsce ls --vsix "$VSIX_PATH"
+          npx @vscode/vsce ls "$VSIX_PATH"
 
       - name: Publish to VS Code Marketplace
         run: |
