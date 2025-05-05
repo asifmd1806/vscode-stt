@@ -1,38 +1,75 @@
+# Development files
 .vscode/**
-.vscode-test.*
 .vscode-test/**
-.gitattributes
 .github/**
 .gitignore
+.gitattributes
+.eslintrc.json
+.eslintignore
+.prettierrc
+.prettierignore
+.editorconfig
+*.vsix
+*.log
+*.tsbuildinfo
+tsconfig.json
+webpack.config.js
+eslint.config.mjs
+
+# Source files (since we use webpack to bundle)
 src/**
-out/** # Ignore old compile output
-node_modules/** # Ignore node_modules initially
+out/**
+test/**
+**/*.map
+**/*.ts
+!src/types/**/*.d.ts
 
-# KEEP BUNDLE OUTPUT
-!dist/** 
+# Dependencies (since we bundle them)
+node_modules/**
+!node_modules/speech-recorder/**
+!node_modules/bindings/**
+!node_modules/node-addon-api/**
+!node_modules/play-sound/**
+!node_modules/wavefile/**
 
-# KEEP NATIVE MODULES COPIED BY ASSET RELOCATOR
-# This assumes the loader copies them into dist/native_modules
-# Adjust if the loader configuration places them elsewhere.
-!dist/native_modules/**/*.node
-
-# KEEP RUNTIME DEPENDENCIES (if asset relocator doesn't copy everything)
-# We marked speech-recorder as external, so keep it
-!node_modules/speech-recorder/** 
-!node_modules/bindings/** # Often needed by native modules
-!node_modules/node-addon-api/** # Often needed by native modules
-
-# KEEP other essential files
+# Keep only essential files
+!dist/**
 !package.json
 !README.md
 !LICENSE
 !CHANGELOG.md
 !media/**
 
-# Exclude development/build files
-*.map
-*.tsbuildinfo
-tsconfig.json
-eslint.config.mjs
-webpack.config.js
-*.vsix
+# Exclude test and example files from dependencies
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/example/**
+node_modules/**/examples/**
+node_modules/**/.bin/**
+node_modules/**/*.md
+node_modules/**/*.txt
+node_modules/**/*.d.ts
+node_modules/**/.git*
+node_modules/**/LICENSE*
+node_modules/**/CHANGELOG*
+node_modules/**/package.json
+
+# Documentation
+docs/**
+**/*.pdf
+**/*.md
+!README.md
+!CHANGELOG.md
+!LICENSE.md
+
+# Development configs
+**/.npmignore
+**/.npmrc
+**/.travis.yml
+**/.github
+**/tsconfig.json
+**/tslint.json
+**/webpack.config.js
+**/rollup.config.js
+**/gulpfile.js
+**/Gruntfile.js

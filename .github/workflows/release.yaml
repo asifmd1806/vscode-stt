@@ -3,33 +3,54 @@ name: Release and Publish
 on:
   push:
     branches:
-      - main 
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.vscode/**'
+      - '.github/**'
+      - '!.github/workflows/release.yaml'
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to push version bump commit & tag, and create release
+      contents: write # Required for version bump commit, tag, and release creation
+      packages: write # Required for publishing to GitHub Packages (if needed)
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Needed for commit history analysis
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg # Required for audio processing
 
       - name: Install dependencies
-        run: npm ci # Use 'ci' for cleaner installs in CI environments
+        run: |
+          npm ci
+          # Rebuild native modules if needed
+          npm rebuild
+
+      - name: Run tests
+        run: npm test
+        continue-on-error: true # Don't fail the workflow if tests fail, but log it
 
       - name: Determine version bump
         id: bump
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          echo "Commit message: $COMMIT_MSG" # Added for debugging
+          echo "Last commit message: $COMMIT_MSG"
           if [[ $COMMIT_MSG == *"BREAKING CHANGE"* ]] || [[ $COMMIT_MSG == *"!:"* ]]; then
             echo "type=major" >> $GITHUB_OUTPUT
             echo "Detected bump type: major"
@@ -53,12 +74,12 @@ jobs:
         run: |
           CURRENT_VERSION=${{ steps.version.outputs.current }}
           BUMP_TYPE=${{ steps.bump.outputs.type }}
-
+          
           IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
           MAJOR="${VERSION_PARTS[0]}"
           MINOR="${VERSION_PARTS[1]}"
           PATCH="${VERSION_PARTS[2]}"
-
+          
           case $BUMP_TYPE in
             major)
               NEW_VERSION="$((MAJOR + 1)).0.0"
@@ -70,7 +91,7 @@ jobs:
               NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
               ;;
           esac
-
+          
           echo "Calculated new version: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
@@ -78,18 +99,46 @@ jobs:
         run: |
           NEW_VERSION=${{ steps.new_version.outputs.version }}
           echo "Updating package.json to version $NEW_VERSION"
-          # Use --allow-same-version in case the logic results in no change (e.g., only chore commits trigger patch)
           npm version $NEW_VERSION --no-git-tag-version --allow-same-version
 
       - name: Build and Package Extension
+        id: package
         run: |
           echo "Running prepublish script (includes webpack build)..."
           npm run vscode:prepublish
-          echo "Listing VSIX files:"
-          ls -la *.vsix
+          
+          # Verify VSIX was created
+          VSIX_COUNT=$(ls -1 *.vsix 2>/dev/null | wc -l)
+          if [ "$VSIX_COUNT" -eq "0" ]; then
+            echo "Error: No VSIX file was created!"
+            exit 1
+          fi
+          
+          VSIX_FILE=$(ls *.vsix)
+          echo "Created VSIX: $VSIX_FILE"
+          echo "vsix_path=$VSIX_FILE" >> $GITHUB_OUTPUT
+
+      - name: Verify VSIX package
+        run: |
+          VSIX_PATH="${{ steps.package.outputs.vsix_path }}"
+          echo "Verifying VSIX package: $VSIX_PATH"
+          
+          # Check file exists and has size
+          if [ ! -s "$VSIX_PATH" ]; then
+            echo "Error: VSIX file is empty or doesn't exist!"
+            exit 1
+          fi
+          
+          # List contents (this will fail if VSIX is corrupt)
+          npx @vscode/vsce ls --vsix "$VSIX_PATH"
 
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --packagePath *.vsix
+        run: |
+          if [ -z "${{ secrets.PUBLISHER_SECRET }}" ]; then
+            echo "Error: PUBLISHER_SECRET is not set!"
+            exit 1
+          fi
+          npx @vscode/vsce publish --packagePath "${{ steps.package.outputs.vsix_path }}"
         env:
           VSCE_PAT: ${{ secrets.PUBLISHER_SECRET }}
 
@@ -97,39 +146,66 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: speech-to-text-stt-${{ steps.new_version.outputs.version }}
-          path: "*.vsix"
-          if-no-files-found: error # Error if the vsix wasn't created
+          path: ${{ steps.package.outputs.vsix_path }}
+          if-no-files-found: error
 
-      - name: Commit, Tag, and Push version bump
+      - name: Commit version bump
+        id: commit
         run: |
           NEW_VERSION=${{ steps.new_version.outputs.version }}
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          # Add only package files
+          
           git add package.json package-lock.json
-          # Commit only if there are changes
           if ! git diff --staged --quiet; then
             git commit -m "chore: bump version to ${NEW_VERSION} [skip ci]"
+            echo "committed=true" >> $GITHUB_OUTPUT
             echo "Committed version bump to ${NEW_VERSION}"
           else
-            echo "No version changes to commit."
+            echo "committed=false" >> $GITHUB_OUTPUT
+            echo "No version changes to commit"
           fi
-          echo "Tagging release as v${NEW_VERSION}"
+
+      - name: Create and push tag
+        run: |
+          NEW_VERSION=${{ steps.new_version.outputs.version }}
+          echo "Creating tag v${NEW_VERSION}"
           git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
-          echo "Pushing tag..."
+          
+          # Push changes (both commit if exists and tag)
+          if [[ "${{ steps.commit.outputs.committed }}" == "true" ]]; then
+            git push
+          fi
           git push origin "v${NEW_VERSION}"
-          echo "Pushing commit..."
-          git push
 
       - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v2 # Updated to v2
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: "*.vsix" # Attach the vsix file to the release
+          files: ${{ steps.package.outputs.vsix_path }}
           draft: false
           prerelease: false
           name: Release v${{ steps.new_version.outputs.version }}
           tag_name: v${{ steps.new_version.outputs.version }}
-          generate_release_notes: true # Automatically generate release notes from commits
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## What's Changed
+            
+            ${{ github.event.head_commit.message }}
+            
+            ## Installation
+            
+            1. Download the VSIX file from the assets below
+            2. In VS Code, go to Extensions view
+            3. Click "..." menu and select "Install from VSIX..."
+            4. Choose the downloaded file
+            
+            Or install directly from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=asif.speech-to-text-stt)
+
+      - name: Handle Failure
+        if: failure()
+        run: |
+          echo "::error::Release workflow failed! Please check the logs above for details."
+          # You could add additional failure handling here, like notifications
