@@ -27,6 +27,9 @@ test/**
 # Dependencies (since we bundle them)
 node_modules/**
 !node_modules/speech-recorder/**
+!node_modules/speech-recorder/build/**
+!node_modules/speech-recorder/build/Release/**
+!node_modules/speech-recorder/build/Release/*.node
 !node_modules/bindings/**
 !node_modules/node-addon-api/**
 !node_modules/play-sound/**

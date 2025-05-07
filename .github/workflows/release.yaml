@@ -34,13 +34,20 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg # Required for audio processing
+          sudo apt-get install -y ffmpeg build-essential python3 # Required for audio processing and native modules
 
       - name: Install dependencies
         run: |
+          # Install dependencies
           npm ci
-          # Rebuild native modules if needed
-          npm rebuild
+          
+          # Force rebuild speech-recorder for the current platform
+          cd node_modules/speech-recorder
+          npm rebuild --build-from-source
+          cd ../..
+          
+          # Verify speech-recorder installation
+          node -e "try { require('speech-recorder'); console.log('speech-recorder loaded successfully'); } catch(e) { console.error('speech-recorder failed to load:', e); process.exit(1); }"
 
       - name: Determine version bump
         id: bump
@@ -103,6 +110,18 @@ jobs:
           echo "Running prepublish script (includes webpack build)..."
           npm run vscode:prepublish
           
+          # Verify native modules are built
+          if [ ! -f "node_modules/speech-recorder/build/Release/speechrecorder.node" ]; then
+            echo "Error: speech-recorder native module not found!"
+            exit 1
+          fi
+          
+          # Copy native modules to dist
+          mkdir -p dist/native_modules
+          cp node_modules/speech-recorder/build/Release/*.node dist/native_modules/
+          cp node_modules/speech-recorder/build/Release/*.so dist/native_modules/ 2>/dev/null || true
+          cp node_modules/speech-recorder/build/Release/*.dylib dist/native_modules/ 2>/dev/null || true
+          
           echo "Creating VSIX package..."
           npx @vscode/vsce package
           
@@ -116,6 +135,13 @@ jobs:
           VSIX_FILE=$(ls *.vsix)
           echo "Created VSIX: $VSIX_FILE"
           echo "vsix_path=$VSIX_FILE" >> $GITHUB_OUTPUT
+          
+          # Verify VSIX contains native modules
+          echo "Verifying VSIX contents..."
+          npx @vscode/vsce ls "$VSIX_FILE" | grep -i "speechrecorder.node" || {
+            echo "Error: Native module not found in VSIX package!"
+            exit 1
+          }
 
       - name: Verify VSIX package
         run: |

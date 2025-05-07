@@ -1,7 +1,7 @@
 {
     "name": "speech-to-text-stt",
     "displayName": "Speech To Text STT",
-    "description": "Speech to text integration using ElevanLabs API",
+    "description": "Speech to text integration using State of the Art Models",
     "version": "0.0.1",
     "publisher": "asifmohammed",
     "author": {
