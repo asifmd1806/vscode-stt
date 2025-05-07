@@ -38,14 +38,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Install dependencies
+          # Install all dependencies using clean install. 
+          # This will run install scripts for all packages, including speech-recorder's attempt to prebuild-install.
           npm ci
           
-          # Rebuild native modules. This should pick up speech-recorder.
-          # The --build-from-source flag can be important for CI environments.
-          npm rebuild --build-from-source speech-recorder
-          
-          # Verify speech-recorder installation
+          # Verify speech-recorder installation. 
+          # This will test if npm ci was able to get speech-recorder into a usable state (either via prebuilt or fallback build).
           node -e "try { require('speech-recorder'); console.log('speech-recorder loaded successfully'); } catch(e) { console.error('speech-recorder failed to load:', e); process.exit(1); }"
 
       - name: Determine version bump
