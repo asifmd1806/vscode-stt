@@ -4,6 +4,7 @@
     "description": "Speech to text integration using State of the Art Models",
     "version": "0.0.1",
     "publisher": "asifmohammed",
+    "icon": "media/icon.png",
     "author": {
         "name": "asif",
         "email": "asif18061996@gmail.com"
@@ -244,6 +245,7 @@
         "@vscode/test-electron": "^2.4.1",
         "electron-rebuild": "^3.2.9",
         "eslint": "^9.23.0",
+        "node-loader": "^2.1.0",
         "ts-loader": "^9.5.2",
         "typescript": "^5.8.2",
         "webpack": "^5.99.7",
@@ -252,9 +254,9 @@
     "dependencies": {
         "date-fns": "^4.1.0",
         "elevenlabs": "^1.57.0",
+        "openai": "^4.0.0",
         "play-sound": "^1.1.6",
         "speech-recorder": "^2.1.0",
-        "wavefile": "^11.0.0",
-        "openai": "^4.0.0"
+        "wavefile": "^11.0.0"
     }
 }

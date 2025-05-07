@@ -1,78 +1,61 @@
-# Development files
+# Files to exclude from the VSIX package
+
+# IDE and OS specific files
 .vscode/**
 .vscode-test/**
-.github/**
-.gitignore
+.DS_Store
+
+# Git specific files
+.git/**
+.github/** 
+# Keep the workflow file for reference, but it won't be packaged if .github is ignored
+# !.github/workflows/release.yaml 
 .gitattributes
+.gitignore
+
+# Node.js development files & dependencies (webpack bundles what's needed into dist/)
+node_modules/**
+
+# Source files (TypeScript, etc., are compiled into dist/)
+src/**
+
+# Test files
+test/**
+*.test.ts
+*.spec.ts
+
+# Build artifacts from old setups or local builds not in dist/
+out/**
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Config files used for development
+webpack.config.js
+tsconfig.json
 .eslintrc.json
 .eslintignore
 .prettierrc
 .prettierignore
 .editorconfig
-*.vsix
+
+# Log files & other temporary files
 *.log
-*.tsbuildinfo
-tsconfig.json
-webpack.config.js
-eslint.config.mjs
+*.vsix # Don't package previously built VSIXs
 
-# Source files (since we use webpack to bundle)
-src/**
-out/**
-test/**
-**/*.map
-**/*.ts
-!src/types/**/*.d.ts
-
-# Dependencies (since we bundle them)
-node_modules/**
-!node_modules/speech-recorder/**
-!node_modules/speech-recorder/build/**
-!node_modules/speech-recorder/build/Release/**
-!node_modules/speech-recorder/build/Release/*.node
-!node_modules/bindings/**
-!node_modules/node-addon-api/**
-!node_modules/play-sound/**
-!node_modules/wavefile/**
-
-# Keep only essential files
-!dist/**
-!package.json
-!README.md
+# Files that should NOT be ignored (ensure these are included)
 !LICENSE
-!CHANGELOG.md
-!media/**
-
-# Exclude test and example files from dependencies
-node_modules/**/test/**
-node_modules/**/tests/**
-node_modules/**/example/**
-node_modules/**/examples/**
-node_modules/**/.bin/**
-node_modules/**/*.md
-node_modules/**/*.txt
-node_modules/**/*.d.ts
-node_modules/**/.git*
-node_modules/**/LICENSE*
-node_modules/**/CHANGELOG*
-node_modules/**/package.json
-
-# Documentation
-docs/**
-**/*.pdf
-**/*.md
 !README.md
-!CHANGELOG.md
-!LICENSE.md
+!CHANGELOG.md # If you have one
+!package.json
 
-# Development configs
-**/.npmignore
-**/.npmrc
-**/.travis.yml
-**/.github
-**/tsconfig.json
-**/tslint.json
-**/webpack.config.js
-**/rollup.config.js
-**/gulpfile.js
-**/Gruntfile.js
+# IMPORTANT: Keep everything in the dist folder, as this is our packaged extension
+!dist/**
+
+# Media assets (if any are directly referenced and not bundled by webpack)
+# If webpack handles media assets by copying them to dist, then this is also covered by !dist/**
+!media/** 
+# Example: !media/icon.png (already in dist if referenced in package.json and packaged)
+
+# Specifically exclude source maps from the final package if not desired
+# dist/**/*.map

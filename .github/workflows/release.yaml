@@ -41,10 +41,9 @@ jobs:
           # Install dependencies
           npm ci
           
-          # Force rebuild speech-recorder for the current platform
-          cd node_modules/speech-recorder
-          npm rebuild --build-from-source
-          cd ../..
+          # Rebuild native modules. This should pick up speech-recorder.
+          # The --build-from-source flag can be important for CI environments.
+          npm rebuild --build-from-source speech-recorder
           
           # Verify speech-recorder installation
           node -e "try { require('speech-recorder'); console.log('speech-recorder loaded successfully'); } catch(e) { console.error('speech-recorder failed to load:', e); process.exit(1); }"
@@ -107,24 +106,27 @@ jobs:
       - name: Build and Package Extension
         id: package
         run: |
-          echo "Running prepublish script (includes webpack build)..."
-          npm run vscode:prepublish
+          echo "Running webpack build (npm run package should trigger this, which now includes asset relocation)..."
+          # The package script in package.json calls: webpack --mode production --devtool hidden-source-map
+          # This will now use our updated webpack.config.js with the asset relocator.
+          npm run package 
           
-          # Verify native modules are built
-          if [ ! -f "node_modules/speech-recorder/build/Release/speechrecorder.node" ]; then
-            echo "Error: speech-recorder native module not found!"
+          # Verify native modules are in dist (webpack should have placed them there)
+          # The exact path might vary based on AssetRelocatorLoader config, default is usually just in dist/
+          # Let's check for speechrecorder.node directly in dist or a common subdirectory like 'native_modules' if specified in webpack
+          if [ ! -f "dist/speechrecorder.node" ] && [ ! -f "dist/native_modules/speechrecorder.node" ]; then
+            echo "Error: speechrecorder.node not found in dist/ or dist/native_modules/ after webpack build!"
+            echo "Listing dist directory:"
+            ls -R dist/
             exit 1
+          else
+            echo "Found speechrecorder.node in dist/"
           fi
           
-          # Copy native modules to dist
-          mkdir -p dist/native_modules
-          cp node_modules/speech-recorder/build/Release/*.node dist/native_modules/
-          cp node_modules/speech-recorder/build/Release/*.so dist/native_modules/ 2>/dev/null || true
-          cp node_modules/speech-recorder/build/Release/*.dylib dist/native_modules/ 2>/dev/null || true
-          
           echo "Creating VSIX package..."
-          npx @vscode/vsce package
-          
+          npx @vscode/vsce package # This command itself runs npm run vscode:prepublish, which runs npm run package again.
+                                 # This is redundant but usually harmless. Consider optimizing package.json scripts later.
+
           # Verify VSIX was created
           VSIX_COUNT=$(ls -1 *.vsix 2>/dev/null | wc -l)
           if [ "$VSIX_COUNT" -eq "0" ]; then
@@ -138,8 +140,11 @@ jobs:
           
           # Verify VSIX contains native modules
           echo "Verifying VSIX contents..."
-          npx @vscode/vsce ls "$VSIX_FILE" | grep -i "speechrecorder.node" || {
-            echo "Error: Native module not found in VSIX package!"
+          # The .node file should now be at the root of the extension/ folder within the VSIX, or in extension/native_modules/
+          npx @vscode/vsce ls "$VSIX_FILE" | grep -E "extension/speechrecorder\.node|extension/native_modules/speechrecorder\.node" || {
+            echo "Error: Native module speechrecorder.node not found in VSIX package at expected location!"
+            echo "Full VSIX contents:"
+            npx @vscode/vsce ls "$VSIX_FILE" --tree
             exit 1
           }
 
