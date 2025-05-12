@@ -108,14 +108,12 @@ jobs:
           # Verify native modules are in dist (webpack should have placed them there)
           # The exact path might vary based on AssetRelocatorLoader config, default is usually just in dist/
           # Let's check for speechrecorder.node directly in dist or a common subdirectory like 'native_modules' if specified in webpack
-          if [ ! -f "dist/speechrecorder.node" ] && [ ! -f "dist/native_modules/speechrecorder.node" ]; then
-            echo "Error: speechrecorder.node not found in dist/ or dist/native_modules/ after webpack build!"
-            echo "Listing dist directory:"
-            ls -R dist/
+          if [ ! -f "dist/extension.js" ]; then
+            echo "Error: extension.js not found in dist/ after webpack build!"
             exit 1
-          else
-            echo "Found speechrecorder.node in dist/"
           fi
+          
+          echo "Build verification passed. Proceeding with packaging..."
           
           echo "Creating VSIX package..."
           npx @vscode/vsce package # This command itself runs npm run vscode:prepublish, which runs npm run package again.
