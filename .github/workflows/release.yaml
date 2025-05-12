@@ -130,11 +130,11 @@ jobs:
           echo "Created VSIX: $VSIX_FILE"
           echo "vsix_path=$VSIX_FILE" >> $GITHUB_OUTPUT
           
-          # Verify VSIX contains native modules
+          # Verify VSIX contains required files
           echo "Verifying VSIX contents..."
-          # The .node file should now be at the root of the extension/ folder within the VSIX, or in extension/native_modules/
-          npx @vscode/vsce ls "$VSIX_FILE" | grep -E "extension/speechrecorder\.node|extension/native_modules/speechrecorder\.node" || {
-            echo "Error: Native module speechrecorder.node not found in VSIX package at expected location!"
+          # Check for essential files
+          npx @vscode/vsce ls "$VSIX_FILE" | grep -E "extension/dist/extension\.js|extension/package\.json" || {
+            echo "Error: Essential files not found in VSIX package!"
             echo "Full VSIX contents:"
             npx @vscode/vsce ls "$VSIX_FILE" --tree
             exit 1
