@@ -2,7 +2,7 @@
     "name": "speech-to-text-stt",
     "displayName": "Speech To Text STT",
     "description": "Speech to text integration using State of the Art Models",
-    "version": "0.0.1",
+    "version": "0.0.3",
     "publisher": "asifmohammed",
     "icon": "media/icon.png",
     "author": {
