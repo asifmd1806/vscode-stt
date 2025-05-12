@@ -100,45 +100,35 @@ jobs:
       - name: Build and Package Extension
         id: package
         run: |
-          echo "Running webpack build (npm run package should trigger this, which now includes asset relocation)..."
-          # The package script in package.json calls: webpack --mode production --devtool hidden-source-map
-          # This will now use our updated webpack.config.js with the asset relocator.
-          npm run package 
+          echo "Building extension..."
+          npm run package
           
-          # Verify native modules are in dist (webpack should have placed them there)
-          # The exact path might vary based on AssetRelocatorLoader config, default is usually just in dist/
-          # Let's check for speechrecorder.node directly in dist or a common subdirectory like 'native_modules' if specified in webpack
+          # Verify build output
           if [ ! -f "dist/extension.js" ]; then
-            echo "Error: extension.js not found in dist/ after webpack build!"
+            echo "Error: extension.js not found in dist/ after build!"
             exit 1
           fi
           
-          echo "Build verification passed. Proceeding with packaging..."
-          
           echo "Creating VSIX package..."
-          npx @vscode/vsce package # This command itself runs npm run vscode:prepublish, which runs npm run package again.
-                                 # This is redundant but usually harmless. Consider optimizing package.json scripts later.
-
+          # Skip the prepublish script to avoid double build
+          npx @vscode/vsce package --no-dependencies --no-yarn
+          
           # Verify VSIX was created
-          VSIX_COUNT=$(ls -1 *.vsix 2>/dev/null | wc -l)
-          if [ "$VSIX_COUNT" -eq "0" ]; then
+          VSIX_FILE=$(ls *.vsix)
+          if [ ! -f "$VSIX_FILE" ]; then
             echo "Error: No VSIX file was created!"
             exit 1
           fi
           
-          VSIX_FILE=$(ls *.vsix)
           echo "Created VSIX: $VSIX_FILE"
           echo "vsix_path=$VSIX_FILE" >> $GITHUB_OUTPUT
           
           # Verify VSIX contains required files
           echo "Verifying VSIX contents..."
-          # Check for essential files
-          npx @vscode/vsce ls "$VSIX_FILE" | grep -E "extension/dist/extension\.js|extension/package\.json" || {
-            echo "Error: Essential files not found in VSIX package!"
-            echo "Full VSIX contents:"
-            npx @vscode/vsce ls "$VSIX_FILE" --tree
+          if ! npx @vscode/vsce ls "$VSIX_FILE" | grep -q "dist/extension\.js"; then
+            echo "Error: extension.js not found in VSIX package!"
             exit 1
-          }
+          fi
 
       - name: Verify VSIX package
         run: |
