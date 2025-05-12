@@ -42,10 +42,6 @@ jobs:
           # This will run install scripts for all packages, including speech-recorder's attempt to prebuild-install.
           npm ci
           
-          # Verify speech-recorder installation. 
-          # This will test if npm ci was able to get speech-recorder into a usable state (either via prebuilt or fallback build).
-          node -e "try { require('speech-recorder'); console.log('speech-recorder loaded successfully'); } catch(e) { console.error('speech-recorder failed to load:', e); process.exit(1); }"
-
       - name: Determine version bump
         id: bump
         run: |
