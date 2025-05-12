@@ -62,9 +62,39 @@ Configure the extension via VS Code settings (File > Preferences > Settings, or 
 6.  **View History:** Transcriptions appear in the view's history section.
 7.  **Copy/Clear:** Use the icons or context menus in the history view to copy text or clear the history.
 
-## Dependencies
+## Requirements
 
-*   Requires `ffmpeg` to be installed and available in your system's PATH for audio processing (used by some underlying libraries).
+* **FFmpeg is required** for audio recording from your microphone. This extension uses FFmpeg to capture audio input.
+
+### Installing FFmpeg
+
+The extension will automatically search for FFmpeg in common installation locations. If not found, you'll need to install it manually:
+
+* **macOS**: 
+  ```
+  brew install ffmpeg
+  ```
+  If you don't have Homebrew, install it from [brew.sh](https://brew.sh/)
+
+* **Windows**: 
+  * Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to your PATH, or
+  * Install via [Chocolatey](https://chocolatey.org/): `choco install ffmpeg`
+
+* **Ubuntu/Debian**: 
+  ```
+  sudo apt install ffmpeg
+  ```
+
+* **CentOS/RHEL**: 
+  ```
+  sudo yum install ffmpeg
+  ```
+
+After installing, ensure FFmpeg is available in your system PATH. You can verify by running `ffmpeg -version` in a terminal.
+
+> **Note**: If you install FFmpeg after launching VS Code, you may need to restart VS Code for the extension to detect it.
+>
+> For detailed information about how this extension uses FFmpeg, detection methods, and advanced installation guidance, see the [FFmpeg Documentation](docs/FFMPEG.md).
 
 ## Contributing
 

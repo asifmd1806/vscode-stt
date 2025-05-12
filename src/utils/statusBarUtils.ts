@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { RecorderService } from '../services/recorderService';
+import { RecorderService, IRecorderService } from '../services/recorderService';
 
 // Define the arguments needed for updating the status bar
 interface StatusBarUpdateArgs {
     statusBarItem: vscode.StatusBarItem;
-    recorderService: RecorderService;
+    recorderService: IRecorderService;
     selectedDeviceId: number | undefined; // To potentially show device info
 }
 

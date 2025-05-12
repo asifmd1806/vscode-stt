@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { RecorderService } from '../services/recorderService'; 
+import { RecorderService, IRecorderService } from '../services/recorderService'; 
 
 import { logInfo } from '../utils/logger';
 
@@ -79,7 +79,7 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
     // Use the shared history array reference from extension.ts
     constructor(
-        private recorderService: RecorderService,
+        private recorderService: IRecorderService,
         private transcriptionHistory: ReadonlyArray<HistoryItem>, // Use the shared array (readonly)
         private setSelectedDeviceIdCallback: (deviceId: number | undefined) => void // Callback to update state
     ) { logInfo("[SttViewProvider] Initialized."); }

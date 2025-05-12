@@ -3,7 +3,8 @@ import { ElevenLabsClient } from 'elevenlabs';
 import * as fs from 'fs';
 import { TranscriptionService } from './transcriptionService';
 import { getElevenLabsConfig, ElevenLabsConfig } from '../config/settings'; 
-import { logInfo, logWarn, logError, showWarn, showError } from '../utils/logger'; 
+import { logInfo, logWarn, logError, showWarn, showError } from '../utils/logger';
+import { verifyAudioFile } from '../utils/fileUtils';
 
 export class ElevenLabsTranscriptionService implements TranscriptionService {
     private client: ElevenLabsClient | null = null;
@@ -70,6 +71,33 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
         return true;
     }
 
+    /**
+     * Additional check to ensure audio file is valid before sending to ElevenLabs
+     */
+    private async validateAudioFile(audioFilePath: string): Promise<boolean> {
+        try {
+            // Perform basic file existence check
+            const stats = await fs.promises.stat(audioFilePath);
+            
+            if (stats.size === 0) {
+                logError("[ElevenLabsTranscriptionService] Audio file is empty (0 bytes)");
+                return false;
+            }
+            
+            // Use the advanced verification
+            const verification = await verifyAudioFile(audioFilePath);
+            if (!verification.valid) {
+                logError(`[ElevenLabsTranscriptionService] Audio file validation failed: ${verification.error}`);
+                return false;
+            }
+            
+            return true;
+        } catch (error) {
+            logError("[ElevenLabsTranscriptionService] Error validating audio file:", error);
+            return false;
+        }
+    }
+
     async transcribeFile(audioFilePath: string): Promise<string | null> {
         logInfo(`[ElevenLabsTranscriptionService] transcribeFile called for path: ${audioFilePath}`);
         
@@ -83,6 +111,13 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
         } catch (accessError: any) {
             showError(`Cannot access temporary audio file: ${accessError.message}`, accessError);
             logError(`[ElevenLabsTranscriptionService] Failed to access temp audio file ${audioFilePath}:`, accessError);
+            return null;
+        }
+        
+        // Validate the audio file before attempting transcription
+        const isAudioValid = await this.validateAudioFile(audioFilePath);
+        if (!isAudioValid) {
+            showError("Cannot transcribe: Audio file is invalid or empty");
             return null;
         }
 
@@ -106,12 +141,31 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
             let fileStream: fs.ReadStream | null = null; 
             try {
                 logInfo(`[ElevenLabsTranscriptionService] Transcription attempt ${attempt}/${maxRetries + 1}`);
-                fileStream = fs.createReadStream(audioFilePath);
                 
-                await new Promise((resolve, reject) => {
-                    fileStream?.on('error', (streamErr: any) => reject(new Error(`Stream error: ${streamErr.message}`)));
-                    fileStream?.on('open', resolve);
+                // Create a new FileStream each attempt to ensure clean state
+                fileStream = fs.createReadStream(audioFilePath, { 
+                    highWaterMark: 1024 * 1024, // 1MB buffer
+                    flags: 'r'
                 });
+                
+                // Wait for stream to open successfully
+                const streamReady = await new Promise((resolve, reject) => {
+                    fileStream?.on('error', (streamErr: any) => {
+                        reject(new Error(`Stream error: ${streamErr.message}`));
+                    });
+                    fileStream?.on('open', () => resolve(true));
+                    
+                    // Add a timeout to avoid hanging
+                    setTimeout(() => reject(new Error("Stream open timeout")), 5000);
+                });
+                
+                // Check file size to ensure non-empty before sending
+                const stats = await fs.promises.stat(audioFilePath);
+                logInfo(`[ElevenLabsTranscriptionService] File size: ${stats.size} bytes`);
+                
+                if (stats.size === 0) {
+                    throw new Error("File is empty (0 bytes)");
+                }
                 
                 const response = await this.client.speechToText.convert({
                     file: fileStream, 
@@ -131,7 +185,17 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
                 }
             } catch (error: any) {
                 lastError = error; 
-                logWarn(`[ElevenLabsTranscriptionService] Transcription attempt ${attempt} failed:`, error.message || error);
+                const errorMessage = error?.message || String(error);
+                logWarn(`[ElevenLabsTranscriptionService] Transcription attempt ${attempt} failed: ${errorMessage}`);
+
+                // Handle specific error cases
+                const responseData = error?.response?.data;
+                if (responseData?.detail?.status === 'empty_file') {
+                    logError("[ElevenLabsTranscriptionService] API reports empty file error");
+                    showError("ElevenLabs API reports empty file error. Check your microphone settings.");
+                    break; // Don't retry on empty file
+                }
+
                 const statusCode = error?.response?.status;
                 const isRetryable = !statusCode || (statusCode >= 500 && statusCode <= 599);
                 if (isRetryable && attempt <= maxRetries) {
@@ -152,10 +216,13 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
         // Handle final failure
         logError("[ElevenLabsTranscriptionService] All transcription attempts failed.");
         let errorMsg = `ElevenLabs transcription failed after ${attempt} attempts.`;
-        if (lastError?.response?.data?.detail) {
+        if (lastError?.response?.data) {
             const detail = lastError.response.data.detail;
-            let apiMessage = typeof detail === 'string' ? detail : detail.message;
-            errorMsg = `ElevenLabs API Error: ${apiMessage || 'Unknown error'}`;
+            if (typeof detail === 'object' && detail !== null) {
+                errorMsg = `Error: Status code: ${lastError.response.status} Body: { "detail": { "status": "${detail.status || 'unknown'}", "message": "${detail.message || 'Unknown error'}" } }`;
+            } else if (typeof detail === 'string') {
+                errorMsg = `Error: ${detail}`;
+            }
         } else if (lastError?.message) {
             errorMsg += ` Error: ${lastError.message}`;
         }

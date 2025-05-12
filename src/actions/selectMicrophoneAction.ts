@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
-import { RecorderService, AudioDeviceInfo } from '../services/recorderService';
+import { RecorderService, AudioDeviceInfo, IRecorderService } from '../services/recorderService';
 
 import { logInfo, logWarn, logError, showWarn, showError, showInfo } from '../utils/logger'; 
 
 // Define the expected structure of the arguments passed from extension.ts
-interface SelectMicrophoneActionArgs {
-    recorderService: RecorderService;
+export interface SelectMicrophoneActionArgs {
+    recorderService: IRecorderService;
     stateUpdater: {
         setSelectedDeviceId: (deviceId: number | undefined) => void;
     };

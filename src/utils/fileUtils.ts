@@ -56,6 +56,126 @@ export async function getRecordingsDir(context: vscode.ExtensionContext): Promis
 }
 
 /**
+ * Lists all saved recordings in the recordings directory.
+ * @param context The extension context
+ * @returns Promise with an array of recording file information 
+ */
+export async function listSavedRecordings(context: vscode.ExtensionContext): Promise<{name: string, path: string, size: number, date: Date}[]> {
+    const dirUri = await getRecordingsDir(context);
+    if (!dirUri) {
+        logError("[FileUtils] Cannot list recordings: Directory path is null");
+        return [];
+    }
+    
+    try {
+        const entries = await vscode.workspace.fs.readDirectory(dirUri);
+        const wavFiles = entries.filter(entry => 
+            entry[1] === vscode.FileType.File && 
+            entry[0].toLowerCase().endsWith('.wav')
+        );
+        
+        const recordings = await Promise.all(wavFiles.map(async ([fileName, _]) => {
+            const filePath = path.join(dirUri.fsPath, fileName);
+            
+            try {
+                const stats = await fs.promises.stat(filePath);
+                return {
+                    name: fileName,
+                    path: filePath,
+                    size: stats.size,
+                    date: stats.mtime
+                };
+            } catch (error) {
+                logError(`[FileUtils] Error getting file stats for ${filePath}:`, error);
+                return {
+                    name: fileName,
+                    path: filePath,
+                    size: 0,
+                    date: new Date()
+                };
+            }
+        }));
+        
+        // Sort by date (newest first)
+        return recordings.sort((a, b) => b.date.getTime() - a.date.getTime());
+    } catch (error) {
+        logError("[FileUtils] Error listing recordings:", error);
+        return [];
+    }
+}
+
+/**
+ * Opens the recordings directory in the system file explorer.
+ * @param context The extension context
+ */
+export async function openRecordingsDirectory(context: vscode.ExtensionContext): Promise<void> {
+    const dirUri = await getRecordingsDir(context);
+    if (!dirUri) {
+        showError("Cannot access recordings directory");
+        return;
+    }
+    
+    try {
+        await vscode.commands.executeCommand('revealFileInOS', dirUri);
+        logInfo(`[FileUtils] Opened recordings directory: ${dirUri.fsPath}`);
+    } catch (error) {
+        logError("[FileUtils] Error opening recordings directory:", error);
+        showError(`Failed to open recordings directory: ${error}`);
+    }
+}
+
+/**
+ * Verifies that an audio file is valid.
+ * @param filePath Path to the audio file to verify
+ * @returns {Promise<{valid: boolean, size: number, error?: string}>} Object with validation results
+ */
+export async function verifyAudioFile(filePath: string): Promise<{valid: boolean, size: number, error?: string}> {
+    try {
+        // Get file stats to check size
+        const stats = await fs.promises.stat(filePath);
+        
+        // Check if file exists
+        if (!stats.isFile()) {
+            return { valid: false, size: 0, error: "Not a valid file" };
+        }
+        
+        // Check if file is empty
+        if (stats.size === 0) {
+            return { valid: false, size: 0, error: "File is empty (0 bytes)" };
+        }
+        
+        // Check if file has minimal WAV header (44 bytes)
+        if (stats.size < 44) {
+            return { valid: false, size: stats.size, error: `File too small for valid WAV (${stats.size} bytes)` };
+        }
+        
+        // Read first 12 bytes to check WAV header signature
+        const fd = await fs.promises.open(filePath, 'r');
+        const headerBuffer = Buffer.alloc(12);
+        await fd.read(headerBuffer, 0, 12, 0);
+        await fd.close();
+        
+        // Check WAV header
+        const riffHeader = headerBuffer.slice(0, 4).toString();
+        const waveHeader = headerBuffer.slice(8, 12).toString();
+        
+        if (riffHeader !== 'RIFF' || waveHeader !== 'WAVE') {
+            return { 
+                valid: false, 
+                size: stats.size, 
+                error: `Invalid WAV header: ${riffHeader}...${waveHeader}` 
+            };
+        }
+        
+        // If all checks pass, return valid
+        return { valid: true, size: stats.size };
+        
+    } catch (error: any) {
+        return { valid: false, size: 0, error: `Validation error: ${error.message}` };
+    }
+}
+
+/**
  * Saves the audio stream content to a temporary WAV file.
  * @param audioStream The readable audio stream.
  * @param outputChannel Channel for logging progress/errors.
@@ -91,6 +211,23 @@ export async function saveAudioToFile(
 
         logInfo(`[FileUtils] Audio successfully saved to ${filePath}`);
         outputChannel.appendLine(`Recording saved successfully.`);
+
+        // Verify the audio file
+        const verificationResult = await verifyAudioFile(filePath);
+        
+        if (!verificationResult.valid) {
+            logError(`[FileUtils] Audio file verification failed: ${verificationResult.error}, size: ${verificationResult.size} bytes`);
+            outputChannel.appendLine(`Warning: Audio file verification failed - ${verificationResult.error}`);
+            
+            if (verificationResult.size === 0) {
+                // If file is empty, don't even attempt transcription
+                return null;
+            }
+        } else {
+            logInfo(`[FileUtils] Audio file verified: ${verificationResult.size} bytes`);
+            outputChannel.appendLine(`Audio file verified (${verificationResult.size} bytes)`);
+        }
+        
         return filePath;
 
     } catch (error: any) {

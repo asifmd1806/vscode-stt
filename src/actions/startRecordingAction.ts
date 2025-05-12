@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
-import { RecorderService } from '../services/recorderService';
+import { IRecorderService } from '../services/recorderService';
 import { SttViewProvider } from '../views/sttViewProvider';
 import { Readable } from 'stream';
 import { logInfo, logWarn, logError, showInfo, showWarn, showError } from '../utils/logger';
 
 // Define the expected structure of the arguments
 interface StartRecordingActionArgs {
-    recorderService: RecorderService;
+    recorderService: IRecorderService;
     stateUpdater: {
         setCurrentAudioStream: (stream: Readable | null) => void;
         setSelectedDeviceId: (deviceId: number | undefined) => void;
@@ -15,6 +15,7 @@ interface StartRecordingActionArgs {
     sttViewProvider: SttViewProvider;
     selectedDeviceId: number | undefined;
     updateStatusBar: () => void;
+    audioChunks: Buffer[]; // Added property to store audio chunks
 }
 
 /**
@@ -29,6 +30,7 @@ export function startRecordingAction({
     sttViewProvider,
     selectedDeviceId,
     updateStatusBar,
+    audioChunks, // Added parameter
 }: StartRecordingActionArgs): vscode.Disposable | null {
     logInfo("[Action] startRecordingAction triggered.");
 
@@ -38,10 +40,7 @@ export function startRecordingAction({
     }
 
     // Determine the device ID to use (get from state, default is handled by service)
-    // Note: selectedDeviceId is managed in extension.ts, passed implicitly via stateUpdater usage
-    // We might need to access it directly if RecorderService doesn't read it.
-    // Let's assume for now RecorderService uses the deviceId passed to startRecording.
-    const deviceIdToUse = selectedDeviceId ?? vscode.workspace.getConfiguration('speech-to-text-stt').get<number>('selectedDeviceId'); // Or read from state
+    const deviceIdToUse = selectedDeviceId ?? vscode.workspace.getConfiguration('speech-to-text-stt').get<number>('selectedDeviceId');
 
     logInfo(`[Action] Attempting to start recording with device ID: ${deviceIdToUse ?? 'Default'}`);
 
@@ -58,6 +57,7 @@ export function startRecordingAction({
             // Handle stream events (optional: logging, etc.)
             audioStream.on('data', (chunk) => {
                 // logInfo(`[Action] Received ${chunk.length} bytes of audio data.`); // Optional: Verbose
+                audioChunks.push(chunk); // Buffer the audio data
             });
             audioStream.on('end', () => {
                 logInfo('[Action] Audio stream ended.');
@@ -86,8 +86,22 @@ export function startRecordingAction({
             // Return a disposable that will clear the context when disposed
             // This helps manage the 'when' clause correctly
             return new vscode.Disposable(() => {
-                stateUpdater.setIsRecordingActive(false);
+                // To avoid recursion, don't call setIsRecordingActive directly
+                // Just log the disposal
                 logInfo("[Action] Recording state context disposed.");
+                
+                // Instead of calling stateUpdater.setIsRecordingActive(false) here,
+                // we let the stopRecordingAction or deactivate handle this
+                
+                // Also ensure that if recording is still active, we stop it
+                if (recorderService.isRecording) {
+                    try {
+                        recorderService.stopRecording();
+                        logInfo("[Action] Stopped recording during disposal.");
+                    } catch (error) {
+                        logError("[Action] Error stopping recording during disposal:", error);
+                    }
+                }
             });
 
         } else {
