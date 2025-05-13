@@ -45,7 +45,7 @@ export function getElevenLabsConfig(): ElevenLabsConfig {
     const config = getConfigSection('elevenlabs');
     return {
         apiKey: config.get<string>('apiKey'),
-        modelId: config.get<string>('modelId') || 'eleven_multilingual_v2',
+        modelId: config.get<string>('modelId') || 'scribe_v1',
         languageCode: config.get<string>('languageCode'),
         numSpeakers: config.get<number>('numSpeakers'),
     };

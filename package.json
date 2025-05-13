@@ -99,8 +99,8 @@
                         },
                         "modelId": {
                             "type": "string",
-                            "default": "eleven_multilingual_v2",
-                            "description": "The ElevenLabs model ID to use for transcription (e.g., eleven_multilingual_v2).",
+                            "default": "scribe_v1",
+                            "description": "The ElevenLabs model ID to use for transcription (e.g., scribe_v1).",
                             "scope": "window"
                         },
                         "languageCode": {

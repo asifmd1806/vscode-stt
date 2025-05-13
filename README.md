@@ -31,7 +31,7 @@ Configure the extension via VS Code settings (File > Preferences > Settings, or 
 2.  **Configure Selected Provider:** You only need to configure the provider you selected above.
     *   **ElevenLabs:**
         *   `speech-to-text-stt.elevenlabs.apiKey`: Your ElevenLabs API key.
-        *   *(Optional)* `speech-to-text-stt.elevenlabs.modelId`: Model ID (default: `eleven_multilingual_v2`).
+        *   *(Optional)* `speech-to-text-stt.elevenlabs.modelId`: Model ID (default: `scribe_v1`).
         *   *(Optional)* `speech-to-text-stt.elevenlabs.languageCode`: BCP-47 language code (e.g., `en`, `es`). Leave empty for auto-detect.
         *   *(Optional)* `speech-to-text-stt.elevenlabs.numSpeakers`: Number of speakers hint (1-32).
     *   **OpenAI:**
