@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { RecorderService, IRecorderService } from '../services/recorderService'; 
 import { eventManager } from '../events/eventManager';
-import { EventType, MicrophoneSelectedEvent, HistoryItemCopiedEvent } from '../events/events';
+import { EventType, MicrophoneSelectedEvent, HistoryItemCopiedEvent, AppEvent } from '../events/events'; // Ensured AppEvent is imported
 import { logInfo, logWarn } from '../utils/logger';
 
 // Define the structure for history items internally
@@ -83,8 +83,7 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     // Use the shared history array reference from extension.ts
     constructor(
         private recorderService: IRecorderService,
-        private transcriptionHistory: ReadonlyArray<HistoryItem>, // Use the shared array (readonly)
-        private setSelectedDeviceIdCallback: (deviceId: number | undefined) => void // Callback to update state in extension.ts if needed
+        private transcriptionHistory: ReadonlyArray<HistoryItem> // Use the shared array (readonly)
     ) { 
         logInfo("[SttViewProvider] Initialized."); 
 
@@ -259,17 +258,10 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             this.currentSelectedDeviceId = normalizedDeviceId;
             // The setSelectedDeviceIdCallback call might be redundant if the source of truth 
             // (extension.ts state) is already updated by the action that triggered the event.
-            // However, if this view provider needs to inform other parts or if it's a direct
-            // update path, it might still be relevant. For now, let's assume it might still be used
-            // by the extension to sync if needed, but primarily the view refreshes itself.
-            // this.setSelectedDeviceIdCallback(normalizedDeviceId); // This might be removed if state is always updated before event
+            // The view provider primarily reacts to display changes.
             this.refresh(); 
         }
     }
     
-    // refreshHistory becomes redundant as TranscriptionCompleted and HistoryCleared events now trigger a general refresh.
-    // public refreshHistory(): void {
-    //      logInfo("[SttViewProvider] Refresh history triggered.");
-    //     this._onDidChangeTreeData.fire(); 
-    // }
+    // refreshHistory became redundant as TranscriptionCompleted and HistoryCleared events now trigger a general refresh.
 } 

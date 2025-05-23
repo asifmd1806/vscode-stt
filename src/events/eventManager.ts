@@ -1,22 +1,28 @@
 import { EventType, AppEvent } from './events';
+import * as vscode from 'vscode'; // Ensure vscode is imported for Disposable type
 
-type EventCallback = (event: AppEvent) => void;
+// Define EventCallback more generically for flexibility with specific event types.
+type EventCallback<T extends AppEvent = AppEvent> = (event: T) => void;
 
 interface EventListeners {
-  [key: string]: EventCallback[];
+  [key: string]: EventCallback<any>[]; // Store callbacks of any AppEvent subtype
 }
 
 export class EventManager {
   private listeners: EventListeners = {};
 
-  subscribe(eventType: EventType, callback: EventCallback): void {
+  subscribe<T extends AppEvent>(eventType: EventType, callback: EventCallback<T>): vscode.Disposable {
     if (!this.listeners[eventType]) {
       this.listeners[eventType] = [];
     }
     this.listeners[eventType].push(callback);
+
+    return {
+      dispose: () => this.unsubscribe(eventType, callback)
+    };
   }
 
-  unsubscribe(eventType: EventType, callback: EventCallback): void {
+  unsubscribe(eventType: EventType, callback: EventCallback<any>): void { // Adjusted callback type here
     if (!this.listeners[eventType]) {
       return;
     }
@@ -25,7 +31,7 @@ export class EventManager {
     );
   }
 
-  emit(eventType: EventType, eventData: AppEvent): void {
+  emit(eventType: EventType, eventData: any): void { 
     if (!this.listeners[eventType]) {
       return;
     }

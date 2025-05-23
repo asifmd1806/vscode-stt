@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import OpenAI from 'openai';
 import { TranscriptionService } from './transcriptionService';

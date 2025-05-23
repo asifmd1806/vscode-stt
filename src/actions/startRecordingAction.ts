@@ -14,10 +14,8 @@ interface StartRecordingActionArgs {
         setSelectedDeviceId: (deviceId: number | undefined) => void;
         setIsRecordingActive: (isRecording: boolean) => void;
     };
-    sttViewProvider: SttViewProvider;
     selectedDeviceId: number | undefined;
-    updateStatusBar: () => void;
-    audioChunks: Buffer[]; // Added property to store audio chunks
+    audioChunks: Buffer[]; 
 }
 
 /**
@@ -29,10 +27,8 @@ interface StartRecordingActionArgs {
 export function startRecordingAction({
     recorderService,
     stateUpdater,
-    sttViewProvider,
     selectedDeviceId,
-    updateStatusBar,
-    audioChunks, // Added parameter
+    audioChunks,
 }: StartRecordingActionArgs): vscode.Disposable | null {
     logInfo("[Action] startRecordingAction triggered.");
 
@@ -52,8 +48,7 @@ export function startRecordingAction({
         if (audioStream) {
             stateUpdater.setCurrentAudioStream(audioStream);
             stateUpdater.setIsRecordingActive(true); // Set context for 'when' clauses
-            updateStatusBar(); // Update status bar text/icon
-            sttViewProvider.refresh(); // Refresh the tree view to show stop button etc.
+            // UI updates (status bar, tree view) are now handled by event listeners
             showInfo('Recording started...');
             eventManager.emit(EventType.RecordingStarted, {});
 
@@ -70,8 +65,7 @@ export function startRecordingAction({
                 if (recorderService.isRecording) {
                     logWarn('[Action] Stream ended unexpectedly while recording state was true.');
                     stateUpdater.setIsRecordingActive(false);
-                    updateStatusBar();
-                    sttViewProvider.refresh();
+                    // UI updates handled by event listeners
                 }
             });
             audioStream.on('error', (err) => {
@@ -81,8 +75,7 @@ export function startRecordingAction({
                 if (recorderService.isRecording) {
                     recorderService.stopRecording(); // Trigger the stop sequence
                     stateUpdater.setIsRecordingActive(false);
-                    updateStatusBar();
-                    sttViewProvider.refresh();
+                    // UI updates handled by event listeners
                 }
             });
 
@@ -112,8 +105,7 @@ export function startRecordingAction({
             logError("[Action] recorderService.startRecording failed to return a stream.");
             // Ensure context is false if start failed
              stateUpdater.setIsRecordingActive(false);
-             updateStatusBar();
-             sttViewProvider.refresh();
+             // UI updates handled by event listeners
              return null;
         }
     } catch (error: any) {
@@ -125,8 +117,7 @@ export function startRecordingAction({
             source: 'startRecordingAction' 
         });
         stateUpdater.setIsRecordingActive(false);
-        updateStatusBar();
-        sttViewProvider.refresh();
+        // UI updates handled by event listeners
         return null;
     }
 } 

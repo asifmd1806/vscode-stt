@@ -19,10 +19,7 @@ node_modules/**
 # Source files (TypeScript, etc., are compiled into dist/)
 src/**
 
-# Test files
-test/**
-*.test.ts
-*.spec.ts
+# Test files (test directory and patterns removed as tests were deleted)
 
 # Build artifacts from old setups or local builds not in dist/
 out/**

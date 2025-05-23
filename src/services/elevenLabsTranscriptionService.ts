@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as vscode from 'vscode';
 import { ElevenLabsClient } from 'elevenlabs';
 import * as fs from 'fs';
 import { TranscriptionService } from './transcriptionService';

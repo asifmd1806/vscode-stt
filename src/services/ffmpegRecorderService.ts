@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as vscode from 'vscode';
 import { PassThrough, Readable } from 'stream';
 import { spawn, ChildProcess, exec } from 'child_process';
 import { logInfo, logWarn, logError, showError, showWarn } from '../utils/logger';

@@ -21,10 +21,8 @@ interface StopRecordingActionArgs {
         setIsRecordingActive: (isRecording: boolean) => void;
     };
     outputChannel: vscode.OutputChannel;
-    sttViewProvider: SttViewProvider; // To refresh the view
-    context: vscode.ExtensionContext; // Add context here
-    updateStatusBar: () => void; // Function to update the status bar
-    audioChunks: Buffer[]; // Added property to store audio chunks
+    context: vscode.ExtensionContext; 
+    audioChunks: Buffer[];
 }
 
 /**
@@ -36,10 +34,8 @@ export async function stopRecordingAction({
     transcriptionService,
     stateUpdater,
     outputChannel,
-    sttViewProvider,
     context,
-    updateStatusBar,
-    audioChunks, // Added parameter
+    audioChunks,
 }: StopRecordingActionArgs): Promise<void> {
     logInfo("[Action] stopRecordingAction triggered.");
 
@@ -55,8 +51,7 @@ export async function stopRecordingAction({
         showError("Error stopping recording: audio stream missing.");
         recorderService.stopRecording(); 
         stateUpdater.setIsRecordingActive(false);
-        updateStatusBar();
-        sttViewProvider.refresh();
+        // UI updates (status bar, tree view) are now handled by event listeners
         return;
     }
 
@@ -72,8 +67,7 @@ export async function stopRecordingAction({
             // First, properly stop the recorder
             recorderService.stopRecording(); 
             stateUpdater.setIsRecordingActive(false);
-            updateStatusBar(); 
-            sttViewProvider.refresh();
+            // UI updates are now handled by event listeners
             logInfo("[Action] Recorder stopped.");
 
             // Give audio stream a moment to complete any pending writes
@@ -188,8 +182,7 @@ export async function stopRecordingAction({
              recorderService.stopRecording();
         }
         stateUpdater.setIsRecordingActive(false);
-        updateStatusBar();
-        sttViewProvider.refresh();
+        // UI updates are now handled by event listeners
         eventManager.emit(EventType.ExtensionError, {
             error,
             message: 'Error during stop/transcribe process',

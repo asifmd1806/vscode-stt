@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as vscode from 'vscode';
 import OpenAI from 'openai'; // Re-use OpenAI library for compatible API
 import { TranscriptionService } from './transcriptionService';
 import { getGroqConfig, GroqConfig } from '../config/settings'; // Import config getter

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { eventManager } from '../events/eventManager';
 import { EventType, MicrophoneSelectedEvent, AppEvent } from '../events/events';
-import { logInfo, logError } from './logger'; // Assuming logger is available
+import { logInfo, logError } from '../utils/logger'; // Corrected path
 
 // --- Module State ---
 let currentStatusBarItem: vscode.StatusBarItem | null = null;
@@ -91,7 +91,7 @@ export function initializeStatusBar(statusBarItem: vscode.StatusBarItem): vscode
 export function updateStatusBar(
     statusBarItem: vscode.StatusBarItem, 
     isRecording: boolean, 
-    selectedDeviceId?: number | string | undefined
+    selectedDeviceId: number | string | undefined // Made non-optional for diagnostics
 ): void {
     currentStatusBarItem = statusBarItem; // Ensure currentStatusBarItem is set
     currentRecordingState = isRecording;
