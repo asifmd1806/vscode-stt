@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { RecorderService, AudioDeviceInfo, IRecorderService } from '../services/recorderService';
-
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 import { logInfo, logWarn, logError, showWarn, showError, showInfo } from '../utils/logger'; 
 
 // Define the expected structure of the arguments passed from extension.ts
@@ -59,13 +60,19 @@ export async function selectMicrophoneAction({ recorderService, stateUpdater }: 
             logInfo(`[Action] User selected device: ${selectedItem.label} (ID: ${finalId})`);
             // Update the state via the stateUpdater passed from extension.ts
             stateUpdater.setSelectedDeviceId(finalId); 
+            eventManager.emit(EventType.MicrophoneSelected, { deviceId: finalId === undefined ? -1 : finalId });
             showInfo(`Input device set to: ${selectedItem.label}`);
         } else {
             logInfo("[Action] Microphone selection cancelled by user.");
         }
 
-    } catch (error) {
+    } catch (error: any) {
         logError("[Action] Error selecting microphone:", error);
-        showError(`Failed to select microphone: ${error}`);
+        showError(`Failed to select microphone: ${error.message || error}`);
+        eventManager.emit(EventType.ExtensionError, {
+            error,
+            message: 'Error selecting microphone',
+            source: 'selectMicrophoneAction'
+        });
     }
 } 

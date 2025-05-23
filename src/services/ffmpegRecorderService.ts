@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import { PassThrough, Readable } from 'stream';
 import { spawn, ChildProcess, exec } from 'child_process';
 import { logInfo, logWarn, logError, showError, showWarn } from '../utils/logger';
 import { AudioDeviceInfo, IRecorderService } from './recorderService';
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -105,10 +108,15 @@ export class FFmpegRecorderService implements IRecorderService {
             
             showError(`FFmpeg is not installed or not in PATH. ${installInstructions}`);
             
-        } catch (error) {
+        } catch (error: any) {
             this.ffmpegAvailable = false;
             logError("[FFmpegRecorderService] Error detecting FFmpeg:", error);
-            showError(`Failed to check FFmpeg availability: ${error}`);
+            showError(`Failed to check FFmpeg availability: ${error.message || error}`);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: 'Error detecting FFmpeg',
+                source: 'FFmpegRecorderService.detectFFmpeg'
+            });
         }
     }
 
@@ -232,9 +240,14 @@ export class FFmpegRecorderService implements IRecorderService {
                     resolve([{ id: -1, name: "Error: Failed to list devices" }]);
                 });
             });
-        } catch (error) {
+        } catch (error: any) {
             logError("[FFmpegRecorderService] Error executing ffmpeg for device listing:", error);
-            showError(`Failed to list audio devices: ${error}`);
+            showError(`Failed to list audio devices: ${error.message || error}`);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: 'Error listing microphones',
+                source: 'FFmpegRecorderService.listMicrophones'
+            });
             return [{ id: -1, name: "Default/Error" }];
         }
     }
@@ -336,6 +349,11 @@ export class FFmpegRecorderService implements IRecorderService {
             const errorMsg = `Failed to start recording: ${error.message || error}`;
             showError(errorMsg, error);
             logError('[FFmpegRecorderService] Start recording error:', error);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: 'Failed to start recording in FFmpegRecorderService',
+                source: 'FFmpegRecorderService.startRecording'
+            });
             this._isRecording = false;
             this.ffmpegProcess = null;
             
@@ -374,6 +392,16 @@ export class FFmpegRecorderService implements IRecorderService {
         this._isRecording = false;
         
         try {
+            if (!this.ffmpegProcess) { // Guard against null process
+                logWarn('[FFmpegRecorderService] stopRecording called but ffmpegProcess is null.');
+                // Ensure state consistency
+                this._isRecording = false;
+                if (this.audioStream && !this.audioStream.destroyed) {
+                    this.audioStream.end();
+                }
+                this.audioStream = null;
+                return;
+            }
             // Tell FFmpeg to stop recording - use SIGINT for cleaner shutdown that completes the file
             logInfo('[FFmpegRecorderService] Sending SIGINT to ffmpeg process to finalize recording.');
             this.ffmpegProcess.kill('SIGINT');
@@ -400,8 +428,13 @@ export class FFmpegRecorderService implements IRecorderService {
                 logInfo('[FFmpegRecorderService] FFmpeg process exited.');
             });
             
-        } catch (e) {
+        } catch (e: any) {
             logError("[FFmpegRecorderService] Error stopping ffmpeg process:", e);
+            eventManager.emit(EventType.ExtensionError, {
+                error: e,
+                message: 'Error stopping ffmpeg process',
+                source: 'FFmpegRecorderService.stopRecording'
+            });
             // Continue cleanup even if kill throws
         }
 

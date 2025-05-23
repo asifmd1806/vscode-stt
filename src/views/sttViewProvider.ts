@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { RecorderService, IRecorderService } from '../services/recorderService'; 
-
-import { logInfo } from '../utils/logger';
+import { eventManager } from '../events/eventManager';
+import { EventType, MicrophoneSelectedEvent, HistoryItemCopiedEvent } from '../events/events';
+import { logInfo, logWarn } from '../utils/logger';
 
 // Define the structure for history items internally
 interface HistoryItem {
@@ -77,12 +78,47 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
     private currentSelectedDeviceId: number | undefined = undefined;
 
+    private subscriptions: vscode.Disposable[] = [];
+
     // Use the shared history array reference from extension.ts
     constructor(
         private recorderService: IRecorderService,
         private transcriptionHistory: ReadonlyArray<HistoryItem>, // Use the shared array (readonly)
-        private setSelectedDeviceIdCallback: (deviceId: number | undefined) => void // Callback to update state
-    ) { logInfo("[SttViewProvider] Initialized."); }
+        private setSelectedDeviceIdCallback: (deviceId: number | undefined) => void // Callback to update state in extension.ts if needed
+    ) { 
+        logInfo("[SttViewProvider] Initialized."); 
+
+        // Subscribe to events
+        this.subscriptions.push(
+            eventManager.subscribe(EventType.RecordingStarted, () => this.refresh()),
+            eventManager.subscribe(EventType.RecordingStopped, () => this.refresh()),
+            eventManager.subscribe(EventType.TranscriptionCompleted, () => this.refresh()),
+            eventManager.subscribe(EventType.HistoryCleared, () => this.refresh()),
+            eventManager.subscribe(EventType.MicrophoneSelected, (event: AppEvent) => {
+                const micEvent = event as MicrophoneSelectedEvent;
+                // Ensure micEvent and deviceId are defined before calling updateSelectedDevice
+                if (micEvent && micEvent.deviceId !== undefined) {
+                    this.updateSelectedDevice(micEvent.deviceId);
+                } else {
+                    logWarn("[SttViewProvider] MicrophoneSelectedEvent received without deviceId.");
+                    // Optionally, refresh or handle default/error state
+                    this.updateSelectedDevice(undefined); // Or some default value
+                }
+            }),
+            eventManager.subscribe(EventType.HistoryItemCopied, (event: AppEvent) => {
+                const copiedEvent = event as HistoryItemCopiedEvent;
+                logInfo(`[SttViewProvider] History item copied: "${copiedEvent.text.substring(0, 20)}..."`);
+                // Optionally, show a brief notification via vscode.window.setStatusBarMessage
+                vscode.window.setStatusBarMessage('Copied to clipboard!', 2000);
+            })
+        );
+    }
+
+    dispose(): void {
+        logInfo("[SttViewProvider] Disposing subscriptions.");
+        this.subscriptions.forEach(sub => sub.dispose());
+        this.subscriptions = [];
+    }
 
     // Method required by TreeDataProvider
     getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
@@ -201,17 +237,39 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     /** Updates the view when the selected device changes externally. */
-    public updateSelectedDevice(deviceId: number | undefined): void {
-        logInfo(`[SttViewProvider] Received updated device ID: ${deviceId}`);
-        if (this.currentSelectedDeviceId !== deviceId) {
-            this.currentSelectedDeviceId = deviceId;
+    public updateSelectedDevice(deviceId: string | number | undefined): void {
+        // Normalize deviceId: The event carries string | number, but internally we might prefer number | undefined
+        let normalizedDeviceId: number | undefined;
+        if (typeof deviceId === 'string') {
+            normalizedDeviceId = parseInt(deviceId, 10);
+            if (isNaN(normalizedDeviceId)) { // Handle cases like "default" or if parsing fails
+                normalizedDeviceId = undefined; 
+            }
+        } else {
+            normalizedDeviceId = deviceId;
+        }
+        
+        // Map -1 (often used for default) to undefined for internal consistency if desired
+        if (normalizedDeviceId === -1) {
+            normalizedDeviceId = undefined;
+        }
+
+        logInfo(`[SttViewProvider] Received updated device ID: ${deviceId}, normalized to: ${normalizedDeviceId}`);
+        if (this.currentSelectedDeviceId !== normalizedDeviceId) {
+            this.currentSelectedDeviceId = normalizedDeviceId;
+            // The setSelectedDeviceIdCallback call might be redundant if the source of truth 
+            // (extension.ts state) is already updated by the action that triggered the event.
+            // However, if this view provider needs to inform other parts or if it's a direct
+            // update path, it might still be relevant. For now, let's assume it might still be used
+            // by the extension to sync if needed, but primarily the view refreshes itself.
+            // this.setSelectedDeviceIdCallback(normalizedDeviceId); // This might be removed if state is always updated before event
             this.refresh(); 
         }
     }
     
-    /** Called from extension when history array is modified. */
-    public refreshHistory(): void {
-         logInfo("[SttViewProvider] Refresh history triggered.");
-        this._onDidChangeTreeData.fire(); 
-    }
+    // refreshHistory becomes redundant as TranscriptionCompleted and HistoryCleared events now trigger a general refresh.
+    // public refreshHistory(): void {
+    //      logInfo("[SttViewProvider] Refresh history triggered.");
+    //     this._onDidChangeTreeData.fire(); 
+    // }
 } 

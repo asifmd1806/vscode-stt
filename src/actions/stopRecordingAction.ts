@@ -6,7 +6,8 @@ import { saveAudioToFile, getRecordingsDir } from '../utils/fileUtils'; // Utili
 import { Readable } from 'stream';
 import { getGeneralSetting } from '../config/settings'; // Import config getter
 import * as fs from 'fs';
-
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 import { logInfo, logWarn, logError, showInfo, showWarn, showError } from '../utils/logger';
 
 // Define the expected structure of the arguments
@@ -100,6 +101,7 @@ export async function stopRecordingAction({
                 await fs.promises.writeFile(filePath, audioBuffer);
                 logInfo(`[Action] Audio saved to ${filePath}`);
                 outputChannel.appendLine(`Audio saved to: ${filePath}`);
+                eventManager.emit(EventType.RecordingStopped, { filePath });
             } catch (writeError) {
                 logError(`[Action] Error writing audio file: ${writeError}`);
                 showError(`Failed to save audio recording: ${writeError}`);
@@ -121,22 +123,25 @@ export async function stopRecordingAction({
 
             progress.report({ message: "Transcribing..." });
             outputChannel.appendLine("Starting transcription...");
+            eventManager.emit(EventType.TranscriptionStarted, { filePath });
             
             if (!transcriptionService.isClientAvailable()) {
                  if (!transcriptionService.ensureProviderConfiguration()) {
                     outputChannel.appendLine("Transcription aborted: Provider configuration required.");
+                    eventManager.emit(EventType.TranscriptionError, { error: new Error("Provider configuration required"), message: 'Transcription aborted: Provider configuration required' });
                     return;
                  }
             }
+            try {
+                const transcriptionResult = await transcriptionService.transcribeFile(filePath);
 
-            const transcriptionResult = await transcriptionService.transcribeFile(filePath);
-
-            if (transcriptionResult !== null) {
-                outputChannel.appendLine(`Transcription successful: "${transcriptionResult}"`);
-                logInfo("[Action] Transcription successful.");
-                stateUpdater.addTranscriptionResult(transcriptionResult);
-                
-                if (getGeneralSetting('copyToClipboardAfterTranscription')) {
+                if (transcriptionResult !== null) {
+                    outputChannel.appendLine(`Transcription successful: "${transcriptionResult}"`);
+                    logInfo("[Action] Transcription successful.");
+                    stateUpdater.addTranscriptionResult(transcriptionResult);
+                    eventManager.emit(EventType.TranscriptionCompleted, { text: transcriptionResult });
+                    
+                    if (getGeneralSetting('copyToClipboardAfterTranscription')) {
                     await vscode.env.clipboard.writeText(transcriptionResult);
                     outputChannel.appendLine("Result copied to clipboard.");
                 }
@@ -153,12 +158,18 @@ export async function stopRecordingAction({
                     }
                 }
                 
-                showInfo('Transcription complete!');
-            } else {
-                outputChannel.appendLine("Transcription failed. See logs for details.");
-                logError("[Action] Transcription failed.");
+                    showInfo('Transcription complete!');
+                } else {
+                    outputChannel.appendLine("Transcription failed. See logs for details.");
+                    logError("[Action] Transcription failed.");
+                    eventManager.emit(EventType.TranscriptionError, { error: new Error("Transcription service returned null"), message: 'Transcription failed' });
+                }
+            } catch (e: any) {
+                logError("[Action] Error during transcription:", e);
+                showError(`Transcription error: ${e.message}`);
+                outputChannel.appendLine(`ERROR: Transcription failed - ${e.message}`);
+                eventManager.emit(EventType.TranscriptionError, { error: e, message: 'Transcription failed catastrophically' });
             }
-
             // Keep the audio file for troubleshooting instead of deleting it
             logInfo(`[Action] Keeping audio file for troubleshooting: ${filePath}`);
             outputChannel.appendLine(`Audio file retained for troubleshooting at: ${filePath}`);
@@ -179,6 +190,11 @@ export async function stopRecordingAction({
         stateUpdater.setIsRecordingActive(false);
         updateStatusBar();
         sttViewProvider.refresh();
+        eventManager.emit(EventType.ExtensionError, {
+            error,
+            message: 'Error during stop/transcribe process',
+            source: 'stopRecordingAction'
+        });
     } finally {
         stateUpdater.setCurrentAudioStream(null);
     }

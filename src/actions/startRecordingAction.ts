@@ -3,6 +3,8 @@ import { IRecorderService } from '../services/recorderService';
 import { SttViewProvider } from '../views/sttViewProvider';
 import { Readable } from 'stream';
 import { logInfo, logWarn, logError, showInfo, showWarn, showError } from '../utils/logger';
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 
 // Define the expected structure of the arguments
 interface StartRecordingActionArgs {
@@ -53,6 +55,7 @@ export function startRecordingAction({
             updateStatusBar(); // Update status bar text/icon
             sttViewProvider.refresh(); // Refresh the tree view to show stop button etc.
             showInfo('Recording started...');
+            eventManager.emit(EventType.RecordingStarted, {});
 
             // Handle stream events (optional: logging, etc.)
             audioStream.on('data', (chunk) => {
@@ -113,12 +116,17 @@ export function startRecordingAction({
              sttViewProvider.refresh();
              return null;
         }
-    } catch (error) {
+    } catch (error: any) {
         logError("[Action] Error starting recording:", error);
-        showError(`Failed to start recording: ${error}`);
-         stateUpdater.setIsRecordingActive(false);
-         updateStatusBar();
-         sttViewProvider.refresh();
-         return null;
+        showError(`Failed to start recording: ${error.message || error}`);
+        eventManager.emit(EventType.ExtensionError, { 
+            error, 
+            message: 'Failed to start recording', 
+            source: 'startRecordingAction' 
+        });
+        stateUpdater.setIsRecordingActive(false);
+        updateStatusBar();
+        sttViewProvider.refresh();
+        return null;
     }
 } 

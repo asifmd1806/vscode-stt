@@ -23,12 +23,16 @@ import { clearHistoryAction } from './actions/clearHistoryAction';
 import { copyHistoryItemAction } from './actions/copyHistoryItemAction';
 
 // Utility Imports (Placeholders - To be created)
-import { updateStatusBar } from './utils/statusBarUtils';
+import { initializeStatusBar, updateStatusBar } from './utils/statusBarUtils'; // Import initializeStatusBar
 import { getRecordingsDir, saveAudioToFile, listSavedRecordings, openRecordingsDirectory } from './utils/fileUtils';
 import { initializeLogger, logInfo, logError, showError } from './utils/logger';
 
 // Import config functions
 import { getTranscriptionProvider, getGeneralSetting, TranscriptionProvider } from './config/settings';
+
+// Import Event Manager
+import { eventManager } from './events/eventManager';
+import { EventType } from './events/events';
 
 // --- Extension State --- 
 // Services (initialized in activate)
@@ -52,9 +56,9 @@ const stateUpdater = {
     setSelectedDeviceId: (deviceId: number | undefined) => {
         selectedDeviceId = deviceId;
         console.log(`[Extension] Selected Device ID updated: ${deviceId}`);
-        // Wrap call to pass required arguments
-        updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }); 
-        sttViewProvider?.updateSelectedDevice(deviceId);
+        // UI updates are now handled by event listeners in SttViewProvider and statusBarUtils
+        // sttViewProvider?.updateSelectedDevice(deviceId); // Removed
+        // updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }); // Removed
     },
     setCurrentAudioStream: (stream: Readable | null) => {
         currentAudioStream = stream;
@@ -67,12 +71,12 @@ const stateUpdater = {
         console.log(`[Extension] Added to history. New length: ${transcriptionHistory.length}`);
         // Limit history size if needed (e.g., keep last 50)
         // if (transcriptionHistory.length > 50) { transcriptionHistory.pop(); }
-        sttViewProvider?.refreshHistory(); // Refresh TreeView
+        // sttViewProvider?.refreshHistory(); // Removed: SttViewProvider listens to TranscriptionCompletedEvent
     },
     clearTranscriptionHistory: () => {
         transcriptionHistory = [];
         console.log("[Extension] Transcription history cleared.");
-        sttViewProvider?.refreshHistory(); // Refresh TreeView
+        // sttViewProvider?.refreshHistory(); // Removed: SttViewProvider listens to HistoryClearedEvent
     },
     // This manages the 'when' clause context for keybindings/menus
     setIsRecordingActive: (isRecording: boolean) => {
@@ -151,17 +155,21 @@ export function activate(context: vscode.ExtensionContext) {
     // Pass state and update functions to the view provider
     sttViewProvider = new SttViewProvider(recorderService, transcriptionHistory, stateUpdater.setSelectedDeviceId);
     context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('sttView', sttViewProvider)
+        vscode.window.registerTreeDataProvider('sttView', sttViewProvider),
+        sttViewProvider // Add SttViewProvider to subscriptions for its dispose method
     );
     logInfo("[Extension] TreeView provider registered.");
 
     // 4. Setup Status Bar Item
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     context.subscriptions.push(statusBarItem);
-    // Initial status bar update (will show default/loading state)
-    updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }); 
+    // Initialize status bar and its event listeners
+    const statusBarDisposables = initializeStatusBar(statusBarItem);
+    context.subscriptions.push(...statusBarDisposables);
+    // Initial status bar update can be done via the old function if needed, or rely on initial state in initializeStatusBar
+    updateStatusBar(statusBarItem, false, selectedDeviceId); // Explicit initial update
     statusBarItem.show();
-    logInfo("[Extension] Status bar item created.");
+    logInfo("[Extension] Status bar item created and initialized.");
 
     // 5. Ensure Recordings Directory Exists
     getRecordingsDir(context); // Call utility to create if needed
@@ -181,8 +189,8 @@ export function activate(context: vscode.ExtensionContext) {
                 recorderService, 
                 stateUpdater,
                 selectedDeviceId: selectedDeviceId,
-                sttViewProvider, 
-                updateStatusBar: () => updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }),
+                sttViewProvider, // sttViewProvider can be removed if not directly called
+                // updateStatusBar: () => updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }), // Removed
                 audioChunks
             });
             if (isRecordingDisposable) {
@@ -206,9 +214,9 @@ export function activate(context: vscode.ExtensionContext) {
                     getCurrentAudioStream: () => currentAudioStream 
                 },
                 outputChannel, 
-                sttViewProvider, 
+                sttViewProvider, // sttViewProvider can be removed if not directly called
                 context, 
-                updateStatusBar: () => updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }),
+                // updateStatusBar: () => updateStatusBar({ statusBarItem, recorderService, selectedDeviceId }), // Removed
                 audioChunks
             });
         }
@@ -290,11 +298,13 @@ export function activate(context: vscode.ExtensionContext) {
     stateUpdater.setIsRecordingActive(false); 
 
     logInfo('[Extension] Activation complete.');
+    eventManager.emit(EventType.ExtensionActivated, {});
 }
 
 // --- Extension Deactivation --- 
 export function deactivate() {
     logInfo('Deactivating "speech-to-text-stt" extension.');
+    eventManager.emit(EventType.ExtensionDeactivated, {});
     
     try {
         // Stop recording if active

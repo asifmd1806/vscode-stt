@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import { ElevenLabsClient } from 'elevenlabs';
 import * as fs from 'fs';
 import { TranscriptionService } from './transcriptionService';
 import { getElevenLabsConfig, ElevenLabsConfig } from '../config/settings'; 
 import { logInfo, logWarn, logError, showWarn, showError } from '../utils/logger';
 import { verifyAudioFile } from '../utils/fileUtils';
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 
 export class ElevenLabsTranscriptionService implements TranscriptionService {
     private client: ElevenLabsClient | null = null;
@@ -47,6 +50,11 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
             this.client = null;
             showError(`Failed to initialize ElevenLabs client: ${error.message}`, error);
             logError('[ElevenLabsTranscriptionService] Client initialization error:', error);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: 'Failed to initialize ElevenLabs client',
+                source: 'ElevenLabsTranscriptionService.initializeClient'
+            });
         }
     }
 
@@ -92,8 +100,13 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
             }
             
             return true;
-        } catch (error) {
+        } catch (error: any) {
             logError("[ElevenLabsTranscriptionService] Error validating audio file:", error);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: 'Error validating audio file',
+                source: 'ElevenLabsTranscriptionService.validateAudioFile'
+            });
             return false;
         }
     }
@@ -111,6 +124,11 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
         } catch (accessError: any) {
             showError(`Cannot access temporary audio file: ${accessError.message}`, accessError);
             logError(`[ElevenLabsTranscriptionService] Failed to access temp audio file ${audioFilePath}:`, accessError);
+            eventManager.emit(EventType.ExtensionError, {
+                error: accessError,
+                message: 'Failed to access temporary audio file',
+                source: 'ElevenLabsTranscriptionService.transcribeFile (accessCheck)'
+            });
             return null;
         }
         
@@ -228,6 +246,12 @@ export class ElevenLabsTranscriptionService implements TranscriptionService {
         }
         showError(errorMsg, lastError);
         logError('[ElevenLabsTranscriptionService] Final transcription error:', lastError);
+        // Emitting ExtensionErrorEvent for the final, unhandled state of transcription failure
+        eventManager.emit(EventType.ExtensionError, {
+            error: lastError,
+            message: `ElevenLabs transcription failed after ${attempt} attempts. Final error: ${lastError?.message || 'Unknown'}`,
+            source: 'ElevenLabsTranscriptionService.transcribeFile'
+        });
         return null;
     }
 } 

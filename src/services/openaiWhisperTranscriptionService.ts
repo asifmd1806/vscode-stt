@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
+import * as vscode from 'vscode';
 import * as fs from 'fs';
 import OpenAI from 'openai';
 import { TranscriptionService } from './transcriptionService';
 import { getOpenAIConfig, OpenAIConfig } from '../config/settings'; 
 import { logInfo, logWarn, logError, showWarn, showError } from '../utils/logger';
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 
 export class OpenAIWhisperTranscriptionService implements TranscriptionService {
     private client: OpenAI | null = null;
@@ -44,6 +47,11 @@ export class OpenAIWhisperTranscriptionService implements TranscriptionService {
             this.client = null;
             showError(`Failed to initialize OpenAI client: ${error.message}`, error);
             logError('[OpenAIWhisperService] Client initialization error:', error);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: 'Failed to initialize OpenAI client',
+                source: 'OpenAIWhisperTranscriptionService.initializeClient'
+            });
         }
     }
 
@@ -81,6 +89,11 @@ export class OpenAIWhisperTranscriptionService implements TranscriptionService {
         } catch (accessError: any) {
             showError(`Cannot access temporary audio file: ${accessError.message}`, accessError);
             logError(`[OpenAIWhisperService] Failed to access temp audio file ${audioFilePath}:`, accessError);
+            eventManager.emit(EventType.ExtensionError, {
+                error: accessError,
+                message: 'Failed to access temporary audio file',
+                source: 'OpenAIWhisperTranscriptionService.transcribeFile (accessCheck)'
+            });
             return null;
         }
 
@@ -116,6 +129,11 @@ export class OpenAIWhisperTranscriptionService implements TranscriptionService {
             }
             showError(errorMsg, error);
             logError('[OpenAIWhisperService] Transcription error:', error);
+            eventManager.emit(EventType.ExtensionError, {
+                error,
+                message: errorMsg, // errorMsg already contains details
+                source: 'OpenAIWhisperTranscriptionService.transcribeFile'
+            });
             return null;
         }
     }

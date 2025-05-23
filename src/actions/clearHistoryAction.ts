@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 import { logInfo, showInfo } from '../utils/logger';
 
 // Define the expected structure of the arguments
@@ -24,6 +25,7 @@ export function clearHistoryAction({ stateUpdater }: ClearHistoryActionArgs): vo
         if (selection === "Clear History") {
             stateUpdater.clearTranscriptionHistory();
             showInfo("Transcription history cleared.");
+            eventManager.emit(EventType.HistoryCleared, {});
             logInfo("[Action] History cleared by user confirmation.");
         } else {
             logInfo("[Action] Clear history cancelled by user.");

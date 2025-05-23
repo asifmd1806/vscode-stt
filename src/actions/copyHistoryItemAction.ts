@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-
+import { eventManager } from '../events/eventManager';
+import { EventType } from '../events/events';
 import { logInfo, logWarn, logError, showInfo, showError } from '../utils/logger';
 
 // Define the expected argument structure (passed from the TreeItem command)
@@ -32,6 +33,7 @@ export async function copyHistoryItemAction(itemArg: HistoryItemArg | string): P
             await vscode.env.clipboard.writeText(textToCopy);
             logInfo("[Action] Copied text to clipboard:", textToCopy.substring(0, 50) + "...");
             showInfo("Transcription copied to clipboard.");
+            eventManager.emit(EventType.HistoryItemCopied, { text: textToCopy });
         } catch (error) {
             logError("[Action] Failed to copy text to clipboard:", error);
             showError(`Failed to copy to clipboard: ${error}`);
