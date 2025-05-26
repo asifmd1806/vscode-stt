@@ -101,7 +101,7 @@ jobs:
         id: package
         run: |
           echo "Building extension..."
-          npm run package
+          npm run package 
           
           # Verify build output
           if [ ! -f "dist/extension.js" ]; then
@@ -112,7 +112,7 @@ jobs:
           echo "Creating VSIX package..."
           # Skip the prepublish script to avoid double build
           npx @vscode/vsce package --no-dependencies --no-yarn
-          
+
           # Verify VSIX was created
           VSIX_FILE=$(ls *.vsix)
           if [ ! -f "$VSIX_FILE" ]; then

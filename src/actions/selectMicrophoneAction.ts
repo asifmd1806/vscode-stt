@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
-import { RecorderService, AudioDeviceInfo, IRecorderService } from '../services/recorderService';
-
-import { logInfo, logWarn, logError, showWarn, showError, showInfo } from '../utils/logger'; 
+import { IRecorderService } from '../services/ffmpegRecorderService';
+import { logInfo, logError, showError } from '../utils/logger';
+import { events } from '../events';
 
 // Define the expected structure of the arguments passed from extension.ts
-export interface SelectMicrophoneActionArgs {
+interface SelectMicrophoneActionArgs {
     recorderService: IRecorderService;
     stateUpdater: {
         setSelectedDeviceId: (deviceId: number | undefined) => void;
@@ -12,60 +12,50 @@ export interface SelectMicrophoneActionArgs {
 }
 
 /**
- * Action to allow the user to select an audio input device.
- * Fetches available devices, presents a Quick Pick menu, and updates the selected device state.
+ * Action to select a microphone device.
+ * Updates UI state and manages device selection.
  */
-export async function selectMicrophoneAction({ recorderService, stateUpdater }: SelectMicrophoneActionArgs): Promise<void> {
-    logInfo("[Action] selectMicrophoneAction triggered.");
-
-    if (recorderService.isRecording) {
-        showWarn('Cannot change microphone while recording is active.');
-        return;
-    }
-
+export async function selectMicrophoneAction({
+    recorderService,
+    stateUpdater
+}: SelectMicrophoneActionArgs): Promise<void> {
     try {
-        const devices = await recorderService.listMicrophones();
-        if (!devices || devices.length === 0 || (devices.length === 1 && devices[0].id === -1)) {
-            showError('No audio input devices found or failed to list devices.');
-            logError("[Action] No valid devices returned by recorderService.listMicrophones");
+        if (recorderService.isRecording) {
+            showError('Cannot change microphone while recording.');
             return;
         }
 
-        // Format devices for Quick Pick
-        const quickPickItems: vscode.QuickPickItem[] = devices.map(device => ({
+        logInfo('[SelectMicrophoneAction] Listing audio devices...');
+
+        // Get available devices
+        const devices = await recorderService.getAudioDevices();
+        if (!devices || devices.length === 0) {
+            showError('No audio devices found.');
+            return;
+        }
+
+        // Create quick pick items
+        const items = devices.map(device => ({
             label: device.name,
-            description: `ID: ${device.id}`,
-            // Store the actual device ID for later retrieval
-            detail: String(device.id) // Using detail to store the ID as a string
+            description: device.label,
+            deviceId: device.id
         }));
 
-        // Add an option for the default device
-        quickPickItems.unshift({
-            label: "Default System Microphone",
-            description: "Let the system choose",
-            detail: "-1" // Use -1 or undefined to represent default
+        // Show device picker
+        const selected = await vscode.window.showQuickPick(items, {
+            placeHolder: 'Select a microphone',
+            matchOnDescription: true
         });
 
-        const selectedItem = await vscode.window.showQuickPick(quickPickItems, {
-            placeHolder: 'Select the microphone to use for recording',
-            title: 'Select Input Device'
-        });
-
-        if (selectedItem) {
-            // Retrieve the stored device ID (converting back to number)
-            const selectedId = parseInt(selectedItem.detail || '-1', 10);
-            const finalId = selectedId === -1 ? undefined : selectedId;
-            
-            logInfo(`[Action] User selected device: ${selectedItem.label} (ID: ${finalId})`);
-            // Update the state via the stateUpdater passed from extension.ts
-            stateUpdater.setSelectedDeviceId(finalId); 
-            showInfo(`Input device set to: ${selectedItem.label}`);
-        } else {
-            logInfo("[Action] Microphone selection cancelled by user.");
+        if (selected) {
+            // Update selected device
+            await recorderService.selectAudioDevice(selected.deviceId);
+            stateUpdater.setSelectedDeviceId(selected.deviceId);
+            logInfo(`[SelectMicrophoneAction] Selected device: ${selected.label}`);
         }
 
     } catch (error) {
-        logError("[Action] Error selecting microphone:", error);
+        logError('[SelectMicrophoneAction] Error selecting microphone:', error);
         showError(`Failed to select microphone: ${error}`);
     }
 } 

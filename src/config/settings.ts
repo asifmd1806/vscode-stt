@@ -130,5 +130,4 @@ export async function setApiKey(provider: TranscriptionProvider, apiKey: string,
         console.error(`[Settings] Attempted to set API key for unknown provider: ${provider}`);
         vscode.window.showErrorMessage(`Cannot set API key for unknown provider: ${provider}`);
     }
-}
-
+} 

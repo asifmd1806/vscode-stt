@@ -1,6 +1,5 @@
-import * as vscode from 'vscode';
-
-import { logInfo, showInfo } from '../utils/logger';
+import { logInfo, logError } from '../utils/logger';
+import { events } from '../events';
 
 // Define the expected structure of the arguments
 interface ClearHistoryActionArgs {
@@ -11,22 +10,23 @@ interface ClearHistoryActionArgs {
 
 /**
  * Action to clear the transcription history.
+ * Updates UI state and emits history cleared event.
  */
 export function clearHistoryAction({ stateUpdater }: ClearHistoryActionArgs): void {
-    logInfo("[Action] clearHistoryAction triggered.");
-    
-    // Ask for confirmation before clearing
-    vscode.window.showWarningMessage(
-        "Are you sure you want to clear the transcription history?",
-        { modal: true }, // Make it a modal dialog
-        "Clear History" // Confirmation button text
-    ).then(selection => {
-        if (selection === "Clear History") {
-            stateUpdater.clearTranscriptionHistory();
-            showInfo("Transcription history cleared.");
-            logInfo("[Action] History cleared by user confirmation.");
-        } else {
-            logInfo("[Action] Clear history cancelled by user.");
-        }
-    });
+    try {
+        logInfo('[ClearHistoryAction] Clearing transcription history...');
+        
+        // Clear history
+        stateUpdater.clearTranscriptionHistory();
+        
+        // Emit history cleared event
+        events.emit({
+            type: 'historyCleared',
+            timestamp: Date.now()
+        });
+        
+        logInfo('[ClearHistoryAction] History cleared successfully.');
+    } catch (error) {
+        logError(`[ClearHistoryAction] Error clearing history: ${error}`);
+    }
 } 
