@@ -25,7 +25,22 @@ export interface GroqConfig {
     temperature?: number;
 }
 
-export type TranscriptionProvider = 'elevenlabs' | 'openai' | 'groq';
+export interface GoogleConfig {
+    credentialsPath?: string;
+    projectId?: string;
+    languageCode: string; // Has default
+    encoding?: string;
+    sampleRateHertz?: number;
+    alternativeLanguageCodes?: string[];
+    maxAlternatives?: number;
+    profanityFilter?: boolean;
+    enableWordTimeOffsets?: boolean;
+    enableAutomaticPunctuation?: boolean;
+    model?: string;
+    useEnhanced?: boolean;
+}
+
+export type TranscriptionProvider = 'elevenlabs' | 'openai' | 'groq' | 'google';
 
 // --- Helper Function to Get Config Section ---
 
@@ -55,7 +70,7 @@ export function getOpenAIConfig(): OpenAIConfig {
     const config = getConfigSection('openai');
     return {
         apiKey: config.get<string>('apiKey'),
-        modelId: config.get<string>('modelId') || 'whisper-1',
+        modelId: config.get<string>('modelId') || 'gpt-4o-transcribe',
         language: config.get<string>('language'),
         prompt: config.get<string>('prompt'),
         temperature: config.get<number>('temperature'),
@@ -70,6 +85,24 @@ export function getGroqConfig(): GroqConfig {
         language: config.get<string>('language'),
         prompt: config.get<string>('prompt'),
         temperature: config.get<number>('temperature'),
+    };
+}
+
+export function getGoogleConfig(): GoogleConfig {
+    const config = getConfigSection('google');
+    return {
+        credentialsPath: config.get<string>('credentialsPath'),
+        projectId: config.get<string>('projectId'),
+        languageCode: config.get<string>('languageCode') || 'en-US',
+        encoding: config.get<string>('encoding') || 'WEBM_OPUS',
+        sampleRateHertz: config.get<number>('sampleRateHertz') || 16000,
+        alternativeLanguageCodes: config.get<string[]>('alternativeLanguageCodes'),
+        maxAlternatives: config.get<number>('maxAlternatives'),
+        profanityFilter: config.get<boolean>('profanityFilter'),
+        enableWordTimeOffsets: config.get<boolean>('enableWordTimeOffsets'),
+        enableAutomaticPunctuation: config.get<boolean>('enableAutomaticPunctuation') ?? true,
+        model: config.get<string>('model') || 'chirp',
+        useEnhanced: config.get<boolean>('useEnhanced'),
     };
 }
 
@@ -126,6 +159,10 @@ export async function setTranscriptionProvider(provider: TranscriptionProvider, 
 export async function setApiKey(provider: TranscriptionProvider, apiKey: string, target: vscode.ConfigurationTarget = vscode.ConfigurationTarget.Global): Promise<void> {
     if (provider === 'elevenlabs' || provider === 'openai' || provider === 'groq') {
         await updateSetting(provider, 'apiKey', apiKey, target);
+    } else if (provider === 'google') {
+        // Google uses credentials file instead of API key
+        console.warn(`[Settings] Google provider uses credentials file, not API key`);
+        vscode.window.showWarningMessage(`Google provider uses service account credentials file, not API key`);
     } else {
         console.error(`[Settings] Attempted to set API key for unknown provider: ${provider}`);
         vscode.window.showErrorMessage(`Cannot set API key for unknown provider: ${provider}`);

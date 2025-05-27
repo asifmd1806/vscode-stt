@@ -84,7 +84,8 @@
                     "enum": [
                         "elevenlabs",
                         "openai",
-                        "groq"
+                        "groq",
+                        "google"
                     ],
                     "default": "elevenlabs",
                     "description": "Select the transcription provider to use.",
@@ -135,8 +136,8 @@
                         },
                         "modelId": {
                             "type": "string",
-                            "default": "whisper-1",
-                            "description": "The OpenAI Whisper model ID to use (e.g., whisper-1).",
+                            "default": "gpt-4o-transcribe",
+                            "description": "The OpenAI Whisper model ID to use (e.g., gpt-4o-transcribe).",
                             "scope": "window"
                         },
                         "language": {
@@ -195,6 +196,83 @@
                             "minimum": 0,
                             "maximum": 1,
                             "description": "(Optional) Sampling temperature (0-1). Default is 0.",
+                            "scope": "window"
+                        }
+                    }
+                },
+                "speech-to-text-stt.google": {
+                    "type": "object",
+                    "title": "Google Cloud Speech-to-Text Settings",
+                    "properties": {
+                        "credentialsPath": {
+                            "type": "string",
+                            "description": "Path to your Google Cloud service account credentials JSON file.",
+                            "scope": "window",
+                            "markdownDescription": "Enter the full path to your Google Cloud service account credentials JSON file. You can create one from [Google Cloud Console](https://console.cloud.google.com/). This is stored securely."
+                        },
+                        "projectId": {
+                            "type": "string",
+                            "description": "Your Google Cloud Project ID.",
+                            "scope": "window"
+                        },
+                        "languageCode": {
+                            "type": "string",
+                            "default": "en-US",
+                            "description": "The language code for speech recognition (e.g., en-US, es-ES, fr-FR).",
+                            "scope": "window"
+                        },
+                        "encoding": {
+                            "type": "string",
+                            "default": "WEBM_OPUS",
+                            "description": "Audio encoding format (e.g., WEBM_OPUS, LINEAR16, FLAC).",
+                            "scope": "window"
+                        },
+                        "sampleRateHertz": {
+                            "type": "integer",
+                            "default": 16000,
+                            "description": "Sample rate in Hz (e.g., 16000, 44100).",
+                            "scope": "window"
+                        },
+                        "model": {
+                            "type": "string",
+                            "default": "chirp",
+                            "description": "The Google Speech model to use (e.g., chirp, latest_long, latest_short).",
+                            "scope": "window"
+                        },
+                        "alternativeLanguageCodes": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "(Optional) Alternative language codes for multilingual recognition.",
+                            "scope": "window"
+                        },
+                        "maxAlternatives": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 30,
+                            "description": "(Optional) Maximum number of recognition alternatives (1-30).",
+                            "scope": "window"
+                        },
+                        "profanityFilter": {
+                            "type": "boolean",
+                            "description": "(Optional) Enable profanity filtering.",
+                            "scope": "window"
+                        },
+                        "enableWordTimeOffsets": {
+                            "type": "boolean",
+                            "description": "(Optional) Enable word-level time offsets.",
+                            "scope": "window"
+                        },
+                        "enableAutomaticPunctuation": {
+                            "type": "boolean",
+                            "default": true,
+                            "description": "(Optional) Enable automatic punctuation.",
+                            "scope": "window"
+                        },
+                        "useEnhanced": {
+                            "type": "boolean",
+                            "description": "(Optional) Use enhanced model for better accuracy (may incur additional costs).",
                             "scope": "window"
                         }
                     }
@@ -262,6 +340,7 @@
         "webpack-cli": "^6.0.1"
     },
     "dependencies": {
+        "@google-cloud/speech": "^7.1.0",
         "date-fns": "^4.1.0",
         "elevenlabs": "^1.57.0",
         "openai": "^4.0.0",

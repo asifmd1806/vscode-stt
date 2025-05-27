@@ -8,7 +8,7 @@ import * as path from 'path';
 import { FFmpegRecorderService, IRecorderService } from './services/ffmpegRecorderService';
 
 // Provider Imports
-import { TranscriptionProvider, OpenAIProvider, GroqProvider, ElevenLabsProvider } from './providers';
+import { TranscriptionProvider, OpenAIProvider, GroqProvider, ElevenLabsProvider, GoogleProvider } from './providers';
 
 // View Imports
 import { SttViewProvider } from './views/sttViewProvider';
@@ -104,6 +104,8 @@ function createTranscriptionProvider(providerName: ProviderType): TranscriptionP
                 return new OpenAIProvider(outputChannel);
             case 'groq':
                 return new GroqProvider(outputChannel);
+            case 'google':
+                return new GoogleProvider(outputChannel);
             default:
                 console.warn(`[Extension] Unknown provider name encountered in factory: ${providerName}`);
                 return null;
@@ -158,6 +160,12 @@ export async function activate(context: vscode.ExtensionContext) {
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     context.subscriptions.push(statusBarItem);
     
+    // Set initial status bar state
+    statusBarItem.text = '$(mic) STT';
+    statusBarItem.tooltip = 'Speech to Text - Click to start recording';
+    statusBarItem.command = 'speech-to-text-stt.startRecording';
+    statusBarItem.show();
+    
     // Setup status bar event handlers and store disposable
     statusBarDisposable = setupStatusBar(statusBarItem);
     if (statusBarDisposable) {
@@ -186,7 +194,6 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
     
-    statusBarItem.show();
     logInfo("[Extension] Status bar item created.");
 
     // 6. Ensure Recordings Directory Exists
