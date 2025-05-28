@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
-import { PassThrough, Readable } from 'stream';
+import { Readable } from 'stream';
 import { spawn, ChildProcess, exec } from 'child_process';
 import { logInfo, logWarn, logError, showError, showWarn } from '../utils/logger';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import { events } from '../events';
 
 export interface AudioDeviceInfo {
@@ -15,17 +16,15 @@ export interface AudioDeviceInfo {
 export interface IRecorderService {
     isRecording: boolean;
     getAudioDevices(): Promise<AudioDeviceInfo[]>;
-    startRecording(deviceId?: number): Promise<Readable | null>;
-    stopRecording(): void;
+    startRecording(deviceId?: number): Promise<boolean>;
+    stopRecording(): Promise<string | null>;
     selectAudioDevice(deviceId: number): Promise<void>;
     onRecordingStateChanged(callback: (isRecording: boolean) => void): void;
-    getCurrentAudioStream(): Readable | null;
     getRecordingDuration(): number; // Duration in milliseconds
 }
 
 export class FFmpegRecorderService implements IRecorderService {
     private ffmpegProcess: ChildProcess | null = null;
-    private audioStream: PassThrough | null = null;
     private _isRecording: boolean = false;
     private isFfmpegAvailable: boolean = false;
     private ffmpegPath: string = 'ffmpeg'; // Default to just the command name
@@ -33,8 +32,11 @@ export class FFmpegRecorderService implements IRecorderService {
     private recordingStartTime: number = 0;
     private currentDeviceId: number = -1;
     private currentDeviceName: string = '';
+    private currentRecordingPath: string | null = null;
+    private context: vscode.ExtensionContext | null = null;
 
-    constructor() {
+    constructor(context?: vscode.ExtensionContext) {
+        this.context = context || null;
         this.detectFfmpeg();
     }
 
@@ -263,24 +265,30 @@ export class FFmpegRecorderService implements IRecorderService {
     /**
      * Starts recording audio from the specified device using ffmpeg.
      * @param deviceId The ID of the audio device to use (-1 for default).
-     * @returns A Readable stream of audio data, or null if recording failed to start.
+     * @returns true if recording started successfully, false otherwise.
      */
-    async startRecording(deviceId: number = -1): Promise<Readable | null> {
+    async startRecording(deviceId: number = -1): Promise<boolean> {
         if (!this.isFfmpegAvailable) {
             showWarn('FFmpeg not available. Cannot start recording.');
             logError("[FFmpegRecorderService] Cannot start recording, ffmpeg not available.");
-            return null;
+            return false;
         }
 
         if (this._isRecording) {
             showWarn('Already recording. Stop the current recording first.');
-            return null;
+            return false;
         }
 
         try {
-            this.audioStream = new PassThrough();
             this.recordingStartTime = Date.now();
             this.currentDeviceId = deviceId;
+            
+            // Generate file path for recording
+            this.currentRecordingPath = await this.generateRecordingPath();
+            if (!this.currentRecordingPath) {
+                showError('Failed to create recording file path.');
+                return false;
+            }
             
             // Verify device exists before recording
             const devices = await this.getAudioDevices();
@@ -288,16 +296,14 @@ export class FFmpegRecorderService implements IRecorderService {
             if (deviceId !== -1 && !targetDevice) {
                 logError(`[FFmpegRecorderService] Device ID ${deviceId} not found in available devices`);
                 showError(`Selected microphone (ID: ${deviceId}) not found. Please select a different device.`);
-                return null;
+                return false;
             }
             
             logInfo(`[FFmpegRecorderService] Using device: ${targetDevice?.name || 'Default'} (ID: ${deviceId})`);
+            logInfo(`[FFmpegRecorderService] Recording to file: ${this.currentRecordingPath}`);
             
-            // Get device name for the event
-            this.getAudioDevices().then(devices => {
-                const device = devices.find(d => d.id === deviceId);
-                this.currentDeviceName = device?.name || 'Unknown Device';
-            });
+            // Store device name for the event
+            this.currentDeviceName = targetDevice?.name || 'Unknown Device';
 
             // Choose the right input format based on platform
             let inputFormat: string;
@@ -324,7 +330,7 @@ export class FFmpegRecorderService implements IRecorderService {
                 inputArgs = ['-f', inputFormat, '-i', linuxDevice];
             }
 
-            // FFmpeg arguments for audio recording
+            // FFmpeg arguments for audio recording directly to file
             const ffmpegArgs = [
                 ...inputArgs,
                 '-acodec', 'pcm_s16le',  // 16-bit PCM
@@ -335,7 +341,8 @@ export class FFmpegRecorderService implements IRecorderService {
                 '-fflags', '+genpts',    // Generate presentation timestamps
                 '-thread_queue_size', '1024', // Increase thread queue size
                 '-use_wallclock_as_timestamps', '1', // Use wall clock timestamps
-                '-'                      // Output to stdout
+                '-y',                    // Overwrite output file if exists
+                this.currentRecordingPath // Output to file
             ];
 
             logInfo(`[FFmpegRecorderService] Starting FFmpeg with args: ${ffmpegArgs.join(' ')}`);
@@ -362,33 +369,6 @@ export class FFmpegRecorderService implements IRecorderService {
                 });
             }
 
-            if (this.ffmpegProcess.stdout) {
-                let bytesReceived = 0;
-                let lastDataTime = Date.now();
-                
-                this.ffmpegProcess.stdout.on('data', (chunk) => {
-                    bytesReceived += chunk.length;
-                    lastDataTime = Date.now();
-                    logInfo(`[FFmpegRecorderService] Received ${chunk.length} bytes (total: ${bytesReceived})`);
-                });
-                
-                // Monitor for data flow stopping
-                const dataMonitor = setInterval(() => {
-                    const timeSinceLastData = Date.now() - lastDataTime;
-                    if (timeSinceLastData > 2000 && this._isRecording) { // No data for 2 seconds
-                        logError(`[FFmpegRecorderService] No audio data received for ${timeSinceLastData}ms - possible device issue`);
-                        clearInterval(dataMonitor);
-                    }
-                }, 1000);
-                
-                this.ffmpegProcess.stdout.on('end', () => {
-                    clearInterval(dataMonitor);
-                    logInfo(`[FFmpegRecorderService] Audio stream ended. Total bytes: ${bytesReceived}`);
-                });
-                
-                this.ffmpegProcess.stdout.pipe(this.audioStream);
-            }
-
             this.ffmpegProcess.on('error', (error) => {
                 logError("[FFmpegRecorderService] FFmpeg process error:", error);
                 showError(`Recording failed: ${error.message}`);
@@ -397,13 +377,12 @@ export class FFmpegRecorderService implements IRecorderService {
 
             this.ffmpegProcess.on('close', (code, signal) => {
                 logInfo(`[FFmpegRecorderService] FFmpeg process closed with code ${code}, signal: ${signal}`);
-                if (code !== 0 && code !== null) {
+                if (code !== 0 && code !== null && this._isRecording) {
                     logError(`[FFmpegRecorderService] FFmpeg process exited with code ${code}`);
                     if (code === 1) {
                         showError('Recording failed: FFmpeg error. Check microphone permissions and device availability.');
                     }
                 }
-                this.stopRecording();
             });
 
             this.ffmpegProcess.on('exit', (code, signal) => {
@@ -417,40 +396,49 @@ export class FFmpegRecorderService implements IRecorderService {
             this.emitRecordingStartedEvent();
 
             logInfo("[FFmpegRecorderService] Recording started successfully.");
-            return this.audioStream;
+            return true;
         } catch (error) {
             logError("[FFmpegRecorderService] Error starting recording:", error);
             showError(`Failed to start recording: ${error}`);
-            this.stopRecording();
-            return null;
+            await this.stopRecording();
+            return false;
         }
     }
 
     /**
-     * Stops the current recording and cleans up resources.
+     * Stops the current recording and returns the file path.
+     * @returns The path to the recorded file, or null if no recording was active.
      */
-    stopRecording(): void {
+    async stopRecording(): Promise<string | null> {
+        let recordingPath: string | null = null;
+        
+        if (this._isRecording && this.currentRecordingPath) {
+            recordingPath = this.currentRecordingPath;
+            const duration = Date.now() - this.recordingStartTime;
+            
+            logInfo(`[FFmpegRecorderService] Stopping recording. Duration: ${duration}ms`);
+            logInfo(`[FFmpegRecorderService] Recording saved to: ${recordingPath}`);
+        }
+
         if (this.ffmpegProcess) {
             try {
-                this.ffmpegProcess.kill();
+                // Send SIGTERM to gracefully stop FFmpeg
+                this.ffmpegProcess.kill('SIGTERM');
+                
+                // Wait a bit for graceful shutdown
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Force kill if still running
+                if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
+                    this.ffmpegProcess.kill('SIGKILL');
+                }
             } catch (error) {
                 logError("[FFmpegRecorderService] Error killing FFmpeg process:", error);
             }
             this.ffmpegProcess = null;
         }
 
-        if (this.audioStream) {
-            try {
-                this.audioStream.end();
-            } catch (error) {
-                logError("[FFmpegRecorderService] Error ending audio stream:", error);
-            }
-            this.audioStream = null;
-        }
-
         if (this._isRecording) {
-            const duration = Date.now() - this.recordingStartTime;
-            
             // Emit recording stopped event
             this.emitRecordingStoppedEvent();
 
@@ -458,6 +446,11 @@ export class FFmpegRecorderService implements IRecorderService {
             this.notifyRecordingStateChange(false);
             logInfo("[FFmpegRecorderService] Recording stopped.");
         }
+        
+        // Clear the current recording path
+        this.currentRecordingPath = null;
+        
+        return recordingPath;
     }
 
     /**
@@ -506,10 +499,6 @@ export class FFmpegRecorderService implements IRecorderService {
         }
     }
 
-    public getCurrentAudioStream(): Readable | null {
-        return this.audioStream;
-    }
-
     private emitRecordingStartedEvent(): void {
         events.emit({
             type: 'recordingStarted',
@@ -538,5 +527,42 @@ export class FFmpegRecorderService implements IRecorderService {
             return Date.now() - this.recordingStartTime;
         }
         return 0;
+    }
+
+    /**
+     * Generates a file path for the recording
+     */
+    private async generateRecordingPath(): Promise<string | null> {
+        try {
+            let recordingsDir: string;
+            
+            if (this.context && this.context.storageUri) {
+                // Use extension storage path
+                const storageUri = this.context.storageUri;
+                const dirUri = vscode.Uri.joinPath(storageUri, 'recordings');
+                
+                // Ensure directory exists
+                try {
+                    await vscode.workspace.fs.stat(dirUri);
+                } catch {
+                    await vscode.workspace.fs.createDirectory(dirUri);
+                }
+                
+                recordingsDir = dirUri.fsPath;
+            } else {
+                // Fallback to temp directory
+                recordingsDir = path.join(os.tmpdir(), 'vscode-stt-recordings');
+                if (!fs.existsSync(recordingsDir)) {
+                    fs.mkdirSync(recordingsDir, { recursive: true });
+                }
+            }
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `recording-${timestamp}.wav`;
+            return path.join(recordingsDir, filename);
+        } catch (error) {
+            logError('[FFmpegRecorderService] Error generating recording path:', error);
+            return null;
+        }
     }
 } 

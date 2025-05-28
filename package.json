@@ -288,6 +288,12 @@
                     "default": false,
                     "description": "Automatically insert the transcribed text into the active editor at the cursor position.",
                     "scope": "window"
+                },
+                "speech-to-text-stt.enableSoundNotification": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Play a sound notification when transcription is completed.",
+                    "scope": "window"
                 }
             }
         },

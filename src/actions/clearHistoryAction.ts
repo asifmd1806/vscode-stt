@@ -1,3 +1,4 @@
+import * as vscode from 'vscode';
 import { logInfo, logError } from '../utils/logger';
 import { events } from '../events';
 
@@ -10,23 +11,30 @@ interface ClearHistoryActionArgs {
 
 /**
  * Action to clear the transcription history.
- * Updates UI state and emits history cleared event.
  */
-export function clearHistoryAction({ stateUpdater }: ClearHistoryActionArgs): void {
-    try {
-        logInfo('[ClearHistoryAction] Clearing transcription history...');
-        
-        // Clear history
-        stateUpdater.clearTranscriptionHistory();
-        
-        // Emit history cleared event
-        events.emit({
-            type: 'historyCleared',
-            timestamp: Date.now()
-        });
-        
-        logInfo('[ClearHistoryAction] History cleared successfully.');
-    } catch (error) {
-        logError(`[ClearHistoryAction] Error clearing history: ${error}`);
+export async function clearHistoryAction({ stateUpdater }: ClearHistoryActionArgs): Promise<void> {
+    const answer = await vscode.window.showWarningMessage(
+        'Are you sure you want to clear all transcription history?',
+        'Yes', 'No'
+    );
+    
+    if (answer === 'Yes') {
+        try {
+            logInfo('[ClearHistoryAction] Clearing transcription history...');
+            
+            // Clear history
+            stateUpdater.clearTranscriptionHistory();
+            
+            // Emit historyCleared event
+            events.emit({
+                type: 'historyCleared',
+                timestamp: Date.now()
+            });
+            
+            logInfo('[ClearHistoryAction] History cleared successfully.');
+            vscode.window.showInformationMessage('Transcription history cleared.');
+        } catch (error) {
+            logError(`[ClearHistoryAction] Error clearing history: ${error}`);
+        }
     }
 } 

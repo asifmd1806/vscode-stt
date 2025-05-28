@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { FFmpegRecorderService, IRecorderService, AudioDeviceInfo } from '../services/ffmpegRecorderService';
+import { IRecorderService, AudioDeviceInfo } from '../services/ffmpegRecorderService';
 import { TranscriptionProvider } from '../providers/baseProvider';
-import { logInfo, logError } from '../utils/logger';
+import { events } from '../events';
+import { SttEvent } from '../events/types';
 
 interface TranscriptionHistoryItem {
     text: string;
@@ -12,25 +13,81 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    // State will be passed from extension instead of maintained internally
     private transcriptionHistory: TranscriptionHistoryItem[] = [];
     private selectedDeviceId: number = -1;
+    private disposables: vscode.Disposable[] = [];
 
     constructor(
         private readonly recorderService: IRecorderService,
         private readonly transcriptionProvider: TranscriptionProvider
     ) {
-        // Initialize with empty state
+        // Subscribe to events
+        this.subscribeToEvents();
+    }
+
+    private subscribeToEvents(): void {
+        // Subscribe to relevant events
+        const eventHandler = (event: SttEvent) => {
+            switch (event.type) {
+                case 'microphoneSelected':
+                    this.selectedDeviceId = event.deviceId;
+                    this.refresh();
+                    break;
+                
+                case 'historyItemAdded':
+                    this.transcriptionHistory.unshift({ 
+                        text: event.text, 
+                        timestamp: event.timestamp 
+                    });
+                    this.refresh();
+                    break;
+                
+                case 'historyCleared':
+                    this.transcriptionHistory = [];
+                    this.refresh();
+                    break;
+                
+                case 'recordingStarted':
+                case 'recordingStopped':
+                case 'transcriptionStarted':
+                case 'transcriptionCompleted':
+                case 'transcriptionError':
+                    // Refresh the view on these state changes
+                    this.refresh();
+                    break;
+            }
+        };
+
+        // Subscribe to all relevant event types
+        events.subscribe('microphoneSelected', eventHandler);
+        events.subscribe('historyItemAdded', eventHandler);
+        events.subscribe('historyCleared', eventHandler);
+        events.subscribe('recordingStarted', eventHandler);
+        events.subscribe('recordingStopped', eventHandler);
+        events.subscribe('transcriptionStarted', eventHandler);
+        events.subscribe('transcriptionCompleted', eventHandler);
+        events.subscribe('transcriptionError', eventHandler);
+
+        // Store the handler for cleanup
+        this.disposables.push({
+            dispose: () => {
+                events.unsubscribe('microphoneSelected', eventHandler);
+                events.unsubscribe('historyItemAdded', eventHandler);
+                events.unsubscribe('historyCleared', eventHandler);
+                events.unsubscribe('recordingStarted', eventHandler);
+                events.unsubscribe('recordingStopped', eventHandler);
+                events.unsubscribe('transcriptionStarted', eventHandler);
+                events.unsubscribe('transcriptionCompleted', eventHandler);
+                events.unsubscribe('transcriptionError', eventHandler);
+            }
+        });
     }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
     }
 
-    refreshHistory(): void {
-        this.refresh();
-    }
-
+    // Keep these methods for backward compatibility but they're no longer the primary update mechanism
     updateSelectedDevice(deviceId: number | undefined): void {
         this.selectedDeviceId = deviceId || -1;
         this.refresh();
@@ -42,11 +99,13 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     addTranscriptionItem(text: string, timestamp: number): void {
+        // This is now handled by the historyItemAdded event
         this.transcriptionHistory.unshift({ text, timestamp });
         this.refresh();
     }
 
     clearTranscriptionHistory(): void {
+        // This is now handled by the historyCleared event
         this.transcriptionHistory = [];
         this.refresh();
     }
@@ -149,6 +208,11 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         }
 
         return items;
+    }
+
+    dispose(): void {
+        this.disposables.forEach(d => d.dispose());
+        this.disposables = [];
     }
 }
 

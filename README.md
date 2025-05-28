@@ -51,6 +51,7 @@ Configure the extension via VS Code settings (File > Preferences > Settings, or 
 
 *   `speech-to-text-stt.copyToClipboardAfterTranscription`: Automatically copy transcription to clipboard (default: `true`).
 *   `speech-to-text-stt.insertIntoEditorAfterTranscription`: Automatically insert transcription into the active editor (default: `false`).
+*   `speech-to-text-stt.enableSoundNotification`: Play a sound notification when transcription is completed (default: `true`).
 
 ## Usage
 

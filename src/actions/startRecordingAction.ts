@@ -2,40 +2,26 @@ import * as vscode from 'vscode';
 import { IRecorderService } from '../services/ffmpegRecorderService';
 import { SttViewProvider } from '../views/sttViewProvider';
 import { logInfo, logError, showError } from '../utils/logger';
-import { Readable } from 'stream';
 import { events } from '../events';
-
-enum RecordingState {
-    READY = 'ready',
-    RECORDING = 'recording',
-    STOPPING = 'stopping'
-}
-
-enum TranscriptionState {
-    IDLE = 'idle',
-    TRANSCRIBING = 'transcribing',
-    COMPLETED = 'completed',
-    ERROR = 'error'
-}
+import { RecordingState, TranscriptionState } from '../types/states';
 
 interface StartRecordingActionArgs {
     recorderService: IRecorderService;
     stateUpdater: {
-        setCurrentAudioStream: (stream: Readable | null) => void;
-        setIsRecordingActive: (isRecording: boolean) => void;
         setRecordingState: (state: RecordingState) => void;
         setTranscriptionState: (state: TranscriptionState) => void;
+        setIsRecordingActive: (isRecording: boolean) => void;
         ensureMicrophoneSelected: () => Promise<boolean>;
     };
     sttViewProvider: SttViewProvider;
-    selectedDeviceId?: number;
+    selectedDeviceId: number | undefined;
     recordingState: RecordingState;
     transcriptionState: TranscriptionState;
 }
 
 /**
  * Action to start recording audio.
- * Updates UI state and manages the recording process.
+ * Ensures microphone is selected and updates UI state.
  */
 export async function startRecordingAction({
     recorderService,
@@ -46,66 +32,69 @@ export async function startRecordingAction({
     transcriptionState
 }: StartRecordingActionArgs): Promise<void> {
     try {
-        if (recorderService.isRecording || recordingState === RecordingState.RECORDING) {
-            showError('Already recording. Stop the current recording first.');
+        // Check if we're in a valid state to start recording
+        if (recordingState !== RecordingState.READY) {
+            showError('Cannot start recording. Please wait for the current operation to complete.');
             return;
         }
 
-        if (transcriptionState === TranscriptionState.TRANSCRIBING) {
-            showError('Cannot start recording while transcribing.');
+        // Ensure microphone is selected
+        const hasMicrophone = await stateUpdater.ensureMicrophoneSelected();
+        if (!hasMicrophone) {
+            logInfo('[StartRecordingAction] No microphone selected, aborting.');
             return;
         }
 
-        // Ensure microphone is selected before recording
-        const microphoneSelected = await stateUpdater.ensureMicrophoneSelected();
-        if (!microphoneSelected) {
-            logInfo('[StartRecordingAction] Recording cancelled - no microphone selected');
-            return;
-        }
+        logInfo(`[StartRecordingAction] Starting recording with device ID: ${selectedDeviceId}`);
 
-        logInfo(`[StartRecordingAction] Starting recording with device ID: ${selectedDeviceId ?? 'undefined (will use default)'}`);
-
-        // Start recording
-        const audioStream = await recorderService.startRecording(selectedDeviceId);
-        if (!audioStream) {
-            showError('Failed to start recording.');
-            stateUpdater.setRecordingState(RecordingState.READY);
-            stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
-            return;
-        }
-
-        // Update state
-        stateUpdater.setCurrentAudioStream(audioStream);
-        stateUpdater.setIsRecordingActive(true);
+        // Update state to recording
         stateUpdater.setRecordingState(RecordingState.RECORDING);
         stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
 
-        // Listen for recording failures
-        audioStream.on('error', () => {
-            logError('[StartRecordingAction] Audio stream error detected');
-            stateUpdater.setCurrentAudioStream(null);
-            stateUpdater.setIsRecordingActive(false);
+        // Start recording
+        const success = await recorderService.startRecording(selectedDeviceId);
+        
+        if (success) {
+            logInfo('[StartRecordingAction] Recording started successfully.');
+            
+            // Update recording state
+            stateUpdater.setIsRecordingActive(true);
+            
+            // Update UI
+            // Note: recordingStarted event is emitted by the recorder service
+        } else {
+            logError('[StartRecordingAction] Failed to start recording.');
+            showError('Failed to start recording. Check your microphone permissions.');
+            
+            // Emit error event
+            events.emit({
+                type: 'extensionError',
+                error: new Error('Failed to start recording'),
+                timestamp: Date.now()
+            });
+            
+            // Reset state
             stateUpdater.setRecordingState(RecordingState.READY);
-            stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
-            sttViewProvider.refresh();
-        });
-
-        // Note: recordingStarted event is emitted by the recorder service
-
-        // Update UI
-        sttViewProvider.refresh();
-
+            stateUpdater.setIsRecordingActive(false);
+            
+            // Update UI
+        }
     } catch (error) {
         logError('[StartRecordingAction] Error starting recording:', error);
         showError(`Failed to start recording: ${error}`);
         
-        // Clean up state on error
-        stateUpdater.setCurrentAudioStream(null);
-        stateUpdater.setIsRecordingActive(false);
+        // Emit error event
+        events.emit({
+            type: 'extensionError',
+            error: error instanceof Error ? error : new Error(String(error)),
+            timestamp: Date.now()
+        });
+        
+        // Reset state on error
         stateUpdater.setRecordingState(RecordingState.READY);
-        stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
+        stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
+        stateUpdater.setIsRecordingActive(false);
         
         // Update UI
-        sttViewProvider.refresh();
     }
 } 
