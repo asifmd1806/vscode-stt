@@ -319,8 +319,12 @@ export class FFmpegRecorderService implements IRecorderService {
                 '-ar', '44100',          // 44.1kHz sample rate
                 '-ac', '2',              // Stereo
                 '-f', 'wav',             // WAV format
+                '-avoid_negative_ts', 'make_zero', // Handle timestamp issues
+                '-fflags', '+genpts',    // Generate presentation timestamps
                 '-'                      // Output to stdout
             ];
+
+            logInfo(`[FFmpegRecorderService] Starting FFmpeg with args: ${ffmpegArgs.join(' ')}`);
 
             // Spawn FFmpeg process
             this.ffmpegProcess = spawn(this.ffmpegPath, ffmpegArgs);
@@ -328,24 +332,51 @@ export class FFmpegRecorderService implements IRecorderService {
             // Handle FFmpeg process events
             if (this.ffmpegProcess.stderr) {
                 this.ffmpegProcess.stderr.on('data', (data) => {
-                    logInfo(`[FFmpegRecorderService] FFmpeg: ${data.toString()}`);
+                    const output = data.toString();
+                    logInfo(`[FFmpegRecorderService] FFmpeg stderr: ${output}`);
+                    
+                    // Check for common error patterns
+                    if (output.includes('Permission denied') || output.includes('Device or resource busy')) {
+                        logError(`[FFmpegRecorderService] Device access error: ${output}`);
+                        showError('Microphone access denied or device busy. Please check permissions and try again.');
+                        this.stopRecording();
+                    } else if (output.includes('No such file or directory') || output.includes('does not exist')) {
+                        logError(`[FFmpegRecorderService] Device not found: ${output}`);
+                        showError('Selected microphone device not found. Please select a different device.');
+                        this.stopRecording();
+                    }
                 });
             }
 
             if (this.ffmpegProcess.stdout) {
+                let bytesReceived = 0;
+                this.ffmpegProcess.stdout.on('data', (chunk) => {
+                    bytesReceived += chunk.length;
+                    logInfo(`[FFmpegRecorderService] Received ${chunk.length} bytes (total: ${bytesReceived})`);
+                });
+                
                 this.ffmpegProcess.stdout.pipe(this.audioStream);
             }
 
             this.ffmpegProcess.on('error', (error) => {
                 logError("[FFmpegRecorderService] FFmpeg process error:", error);
+                showError(`Recording failed: ${error.message}`);
                 this.stopRecording();
             });
 
-            this.ffmpegProcess.on('close', (code) => {
-                if (code !== 0) {
+            this.ffmpegProcess.on('close', (code, signal) => {
+                logInfo(`[FFmpegRecorderService] FFmpeg process closed with code ${code}, signal: ${signal}`);
+                if (code !== 0 && code !== null) {
                     logError(`[FFmpegRecorderService] FFmpeg process exited with code ${code}`);
+                    if (code === 1) {
+                        showError('Recording failed: FFmpeg error. Check microphone permissions and device availability.');
+                    }
                 }
                 this.stopRecording();
+            });
+
+            this.ffmpegProcess.on('exit', (code, signal) => {
+                logInfo(`[FFmpegRecorderService] FFmpeg process exited with code ${code}, signal: ${signal}`);
             });
 
             this._isRecording = true;

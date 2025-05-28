@@ -136,8 +136,8 @@
                         },
                         "modelId": {
                             "type": "string",
-                            "default": "gpt-4o-transcribe",
-                            "description": "The OpenAI Whisper model ID to use (e.g., gpt-4o-transcribe).",
+                            "default": "whisper-1",
+                            "description": "The OpenAI Whisper model ID to use (e.g., whisper-1, gpt-4o-transcribe).",
                             "scope": "window"
                         },
                         "language": {
