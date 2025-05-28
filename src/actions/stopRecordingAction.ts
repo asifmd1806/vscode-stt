@@ -121,6 +121,8 @@ export async function stopRecordingAction({
         // Start transcription if provider is available
         if (transcriptionProvider) {
             try {
+                logInfo(`[StopRecordingAction] Starting transcription using provider: ${transcriptionProvider.constructor.name}`);
+                
                 // Emit transcriptionStarted event
                 events.emit({
                     type: 'transcriptionStarted',
@@ -129,16 +131,21 @@ export async function stopRecordingAction({
                 });
 
                 const startTime = Date.now();
+                logInfo('[StopRecordingAction] Calling transcription provider...');
                 const transcription = await transcriptionProvider.transcribeFile(savedFilePath);
+                const transcriptionDuration = Date.now() - startTime;
+                logInfo(`[StopRecordingAction] Transcription completed in ${transcriptionDuration}ms`);
 
                 if (transcription) {
+                    logInfo(`[StopRecordingAction] Transcription result: "${transcription}"`);
+                    
                     // Emit transcriptionCompleted event
                     events.emit({
                         type: 'transcriptionCompleted',
                         audioFilePath: savedFilePath,
                         text: transcription,
                         timestamp: Date.now(),
-                        duration: Date.now() - startTime
+                        duration: transcriptionDuration
                     });
 
                     // Add to history and emit history event
@@ -149,9 +156,10 @@ export async function stopRecordingAction({
                         timestamp: Date.now()
                     });
 
-                    logInfo('[StopRecordingAction] Transcription completed successfully.');
+                    logInfo('[StopRecordingAction] Transcription completed successfully and added to history.');
                     stateUpdater.setTranscriptionState(TranscriptionState.COMPLETED);
                 } else {
+                    logError('[StopRecordingAction] Transcription failed: No result returned from provider.');
                     showError('Transcription failed: No result returned.');
                     stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
                 }
@@ -172,6 +180,7 @@ export async function stopRecordingAction({
                 }, 2000); // Show completed/error state for 2 seconds
             }
         } else {
+            logError('[StopRecordingAction] No transcription provider available - cannot transcribe audio.');
             stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
             showError('No transcription provider available.');
         }

@@ -294,13 +294,22 @@ export class FFmpegRecorderService implements IRecorderService {
             
             if (os.platform() === 'darwin') {
                 inputFormat = 'avfoundation';
-                inputArgs = ['-f', inputFormat, '-i', `:${deviceId}`];
+                // For macOS, use :0 for default device or the specific device ID
+                const macDeviceId = deviceId === -1 ? 0 : deviceId;
+                inputArgs = ['-f', inputFormat, '-i', `:${macDeviceId}`];
             } else if (os.platform() === 'win32') {
                 inputFormat = 'dshow';
-                inputArgs = ['-f', inputFormat, '-i', `audio=${deviceId}`];
+                // For Windows, we need to handle device selection differently
+                if (deviceId === -1) {
+                    inputArgs = ['-f', inputFormat, '-i', 'audio='];
+                } else {
+                    inputArgs = ['-f', inputFormat, '-i', `audio=${deviceId}`];
+                }
             } else {
                 inputFormat = 'alsa';
-                inputArgs = ['-f', inputFormat, '-i', `default`];
+                // For Linux, use default or specific device
+                const linuxDevice = deviceId === -1 ? 'default' : `hw:${deviceId}`;
+                inputArgs = ['-f', inputFormat, '-i', linuxDevice];
             }
 
             // FFmpeg arguments for audio recording

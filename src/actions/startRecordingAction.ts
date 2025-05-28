@@ -25,6 +25,7 @@ interface StartRecordingActionArgs {
         setIsRecordingActive: (isRecording: boolean) => void;
         setRecordingState: (state: RecordingState) => void;
         setTranscriptionState: (state: TranscriptionState) => void;
+        ensureMicrophoneSelected: () => Promise<boolean>;
     };
     sttViewProvider: SttViewProvider;
     selectedDeviceId?: number;
@@ -55,14 +56,21 @@ export async function startRecordingAction({
             return;
         }
 
-        logInfo('[StartRecordingAction] Starting recording...');
+        // Ensure microphone is selected before recording
+        const microphoneSelected = await stateUpdater.ensureMicrophoneSelected();
+        if (!microphoneSelected) {
+            logInfo('[StartRecordingAction] Recording cancelled - no microphone selected');
+            return;
+        }
+
+        logInfo(`[StartRecordingAction] Starting recording with device ID: ${selectedDeviceId ?? 'undefined (will use default)'}`);
 
         // Start recording
         const audioStream = recorderService.startRecording(selectedDeviceId);
         if (!audioStream) {
             showError('Failed to start recording.');
             stateUpdater.setRecordingState(RecordingState.READY);
-            stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
+            stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
             return;
         }
 
@@ -71,6 +79,16 @@ export async function startRecordingAction({
         stateUpdater.setIsRecordingActive(true);
         stateUpdater.setRecordingState(RecordingState.RECORDING);
         stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
+
+        // Listen for recording failures
+        audioStream.on('error', () => {
+            logError('[StartRecordingAction] Audio stream error detected');
+            stateUpdater.setCurrentAudioStream(null);
+            stateUpdater.setIsRecordingActive(false);
+            stateUpdater.setRecordingState(RecordingState.READY);
+            stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
+            sttViewProvider.refresh();
+        });
 
         // Note: recordingStarted event is emitted by the recorder service
 

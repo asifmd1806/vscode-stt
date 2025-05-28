@@ -89,12 +89,11 @@ const stateUpdater = {
         const newItem = { text, timestamp: Date.now() };
         transcriptionHistory.unshift(newItem);
         console.log(`[Extension] Added to history. New length: ${transcriptionHistory.length}`);
-        sttViewProvider?.refreshHistory();
+        sttViewProvider?.addTranscriptionItem(text, newItem.timestamp);
     },
     clearTranscriptionHistory: () => {
         transcriptionHistory = [];
-        console.log("[Extension] Transcription history cleared.");
-        sttViewProvider?.refreshHistory();
+        console.log("[Extension] Transcription history cleared.");        sttViewProvider?.clearTranscriptionHistory();
     },
     setIsRecordingActive: (isRecording: boolean) => {
         try {
@@ -114,6 +113,10 @@ const stateUpdater = {
         } catch (error) {
             console.error("[Extension] Error in setIsRecordingActive:", error);
         }
+    },
+    ensureMicrophoneSelected: async (): Promise<boolean> => {
+        // This will be set in the activate function
+        return false;
     }
 };
 
@@ -190,6 +193,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // 2. Initialize Services
     recorderService = new FFmpegRecorderService();
+    
+    // Listen for recording state changes to handle failures
+    recorderService.onRecordingStateChanged((isRecording) => {
+        if (!isRecording) {
+            // Recording stopped (could be due to failure)
+            stateUpdater.setCurrentAudioStream(null);
+            stateUpdater.setIsRecordingActive(false);
+            stateUpdater.setRecordingState(RecordingState.READY);
+            stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
+        }
+    });
+    
     logInfo("[Extension] Recorder service initialized.");
 
     // 3. Initialize Transcription Provider based on Configuration
@@ -262,7 +277,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(vscode.commands.registerCommand(
         'speech-to-text-stt.selectMicrophone', 
-        () => selectMicrophoneAction({ recorderService, stateUpdater })
+        () => selectMicrophoneAction({ recorderService, stateUpdater, context })
     ));
 
     context.subscriptions.push(vscode.commands.registerCommand(
@@ -361,6 +376,72 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Set initial context for when clause
     stateUpdater.setIsRecordingActive(false);
+
+    // Restore selected device ID from global state
+    const savedDeviceId = context.globalState.get<number>('selectedDeviceId');
+    if (savedDeviceId !== undefined) {
+        selectedDeviceId = savedDeviceId;
+        stateUpdater.setSelectedDeviceId(savedDeviceId);
+        logInfo(`[Extension] Restored selected device ID: ${savedDeviceId}`);
+    }
+
+    // Function to ensure microphone is selected before recording
+    async function ensureMicrophoneSelected(): Promise<boolean> {
+        const hasSelectedMicrophone = context.globalState.get<boolean>('hasSelectedMicrophone', false);
+        
+        if (hasSelectedMicrophone && selectedDeviceId !== undefined) {
+            // Already have a selected device
+            return true;
+        }
+
+        try {
+            logInfo('[Extension] Prompting user to select microphone for first time...');
+            
+            const devices = await recorderService.getAudioDevices();
+            if (!devices || devices.length === 0 || devices[0].id === -1) {
+                showError('No audio devices found. Please check your microphone connection.');
+                return false;
+            }
+
+            // Show device selection dialog
+            const items = devices.map(device => ({
+                label: device.name,
+                description: device.label,
+                deviceId: device.id
+            }));
+
+            const selected = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Select a microphone for Speech to Text',
+                ignoreFocusOut: true // Don't dismiss if user clicks elsewhere
+            });
+
+            if (!selected) {
+                // User cancelled selection
+                logInfo('[Extension] User cancelled microphone selection');
+                return false;
+            }
+
+            // Save the selected device
+            selectedDeviceId = selected.deviceId;
+            stateUpdater.setSelectedDeviceId(selected.deviceId);
+            await recorderService.selectAudioDevice(selected.deviceId);
+            
+            // Save to global state
+            context.globalState.update('selectedDeviceId', selected.deviceId);
+            context.globalState.update('hasSelectedMicrophone', true);
+            
+            logInfo(`[Extension] User selected microphone: ${selected.label} (ID: ${selected.deviceId})`);
+            return true;
+
+        } catch (error) {
+            logError('[Extension] Error during microphone selection:', error);
+            showError(`Failed to select microphone: ${error}`);
+            return false;
+        }
+    }
+
+    // Update the stateUpdater with the actual function
+    stateUpdater.ensureMicrophoneSelected = ensureMicrophoneSelected;
 
     // Emit extension activated event
     events.emit({
