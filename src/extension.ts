@@ -40,13 +40,30 @@ let statusBarItem: vscode.StatusBarItem;
 let outputChannel: vscode.OutputChannel;
 let statusBarDisposable: vscode.Disposable | null = null;
 
+// --- State Management ---
+enum RecordingState {
+    READY = 'ready',
+    RECORDING = 'recording',
+    STOPPING = 'stopping'
+}
+
+enum TranscriptionState {
+    IDLE = 'idle',
+    TRANSCRIBING = 'transcribing',
+    COMPLETED = 'completed',
+    ERROR = 'error'
+}
+
 // Runtime State
 let currentAudioStream: Readable | null = null;
 let selectedDeviceId: number | undefined = undefined;
 let transcriptionHistory: { text: string; timestamp: number }[] = [];
 let isRecordingDisposable: vscode.Disposable | null = null;
 let audioChunks: Buffer[] = [];
-let isTranscribing: boolean = false;
+
+// State variables
+let recordingState: RecordingState = RecordingState.READY;
+let transcriptionState: TranscriptionState = TranscriptionState.IDLE;
 
 // --- State Update Proxy (Centralized updates and UI triggers) ---
 const stateUpdater = {
@@ -58,8 +75,15 @@ const stateUpdater = {
         currentAudioStream = stream;
         console.log(`[Extension] Audio stream ${stream ? 'set' : 'cleared'}`);
     },
-    setIsTranscribing: (transcribing: boolean) => {
-        isTranscribing = transcribing;
+    setRecordingState: (state: RecordingState) => {
+        recordingState = state;
+        console.log(`[Extension] Recording state updated to: ${state}`);
+        updateStatusBar();
+    },
+    setTranscriptionState: (state: TranscriptionState) => {
+        transcriptionState = state;
+        console.log(`[Extension] Transcription state updated to: ${state}`);
+        updateStatusBar();
     },
     addTranscriptionResult: (text: string) => {
         const newItem = { text, timestamp: Date.now() };
@@ -92,6 +116,40 @@ const stateUpdater = {
         }
     }
 };
+
+// --- Status Bar Update Function ---
+function updateStatusBar() {
+    if (!statusBarItem) return;
+    
+    try {
+        if (recordingState === RecordingState.RECORDING) {
+            statusBarItem.text = '$(record) Recording...';
+            statusBarItem.tooltip = 'Click to stop recording';
+            statusBarItem.command = 'speech-to-text-stt.stopRecording';
+        } else if (recordingState === RecordingState.STOPPING) {
+            statusBarItem.text = '$(loading~spin) Stopping...';
+            statusBarItem.tooltip = 'Stopping recording...';
+            statusBarItem.command = undefined;
+        } else if (transcriptionState === TranscriptionState.TRANSCRIBING) {
+            statusBarItem.text = '$(sync~spin) Transcribing...';
+            statusBarItem.tooltip = 'Transcribing audio...';
+            statusBarItem.command = undefined;
+        } else if (transcriptionState === TranscriptionState.ERROR) {
+            statusBarItem.text = '$(error) STT Error';
+            statusBarItem.tooltip = 'Error occurred - Click to try again';
+            statusBarItem.command = 'speech-to-text-stt.startRecording';
+        } else {
+            // Ready state
+            statusBarItem.text = '$(mic) STT';
+            statusBarItem.tooltip = 'Speech to Text - Click to start recording';
+            statusBarItem.command = 'speech-to-text-stt.startRecording';
+        }
+        
+        statusBarItem.show();
+    } catch (error) {
+        console.error('[Extension] Error updating status bar:', error);
+    }
+}
 
 // --- Factory Function for Transcription Provider ---
 function createTranscriptionProvider(providerName: ProviderType): TranscriptionProvider | null {
@@ -214,7 +272,8 @@ export async function activate(context: vscode.ExtensionContext) {
             stateUpdater,
             sttViewProvider,
             selectedDeviceId,
-            isTranscribing
+            recordingState,
+            transcriptionState
         })
     ));
 
@@ -226,7 +285,8 @@ export async function activate(context: vscode.ExtensionContext) {
             stateUpdater,
             sttViewProvider,
             selectedDeviceId,
-            isTranscribing,
+            recordingState,
+            transcriptionState,
             context,
             outputChannel
         })

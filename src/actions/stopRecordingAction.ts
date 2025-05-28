@@ -7,18 +7,33 @@ import { saveAudioToFile } from '../utils/fileUtils';
 import { Readable } from 'stream';
 import { events } from '../events';
 
+enum RecordingState {
+    READY = 'ready',
+    RECORDING = 'recording',
+    STOPPING = 'stopping'
+}
+
+enum TranscriptionState {
+    IDLE = 'idle',
+    TRANSCRIBING = 'transcribing',
+    COMPLETED = 'completed',
+    ERROR = 'error'
+}
+
 interface StopRecordingActionArgs {
     recorderService: IRecorderService;
     transcriptionProvider: TranscriptionProvider | null;
     stateUpdater: {
         setCurrentAudioStream: (stream: Readable | null) => void;
         setIsRecordingActive: (isRecording: boolean) => void;
-        setIsTranscribing: (isTranscribing: boolean) => void;
+        setRecordingState: (state: RecordingState) => void;
+        setTranscriptionState: (state: TranscriptionState) => void;
         addTranscriptionResult: (text: string) => void;
     };
     sttViewProvider: SttViewProvider;
     selectedDeviceId?: number;
-    isTranscribing?: boolean;
+    recordingState: RecordingState;
+    transcriptionState: TranscriptionState;
     context: vscode.ExtensionContext;
     outputChannel: vscode.OutputChannel;
 }
@@ -33,22 +48,28 @@ export async function stopRecordingAction({
     stateUpdater,
     sttViewProvider,
     selectedDeviceId,
-    isTranscribing = false,
+    recordingState,
+    transcriptionState,
     context,
     outputChannel
 }: StopRecordingActionArgs): Promise<void> {
     try {
-        if (!recorderService.isRecording) {
+        if (!recorderService.isRecording && recordingState !== RecordingState.RECORDING) {
             showError('No active recording to stop.');
             return;
         }
 
         logInfo('[StopRecordingAction] Stopping recording...');
 
+        // Set stopping state
+        stateUpdater.setRecordingState(RecordingState.STOPPING);
+
         // Get the audio stream BEFORE stopping (it becomes null after stopping)
         const audioStream = recorderService.getCurrentAudioStream();
         if (!audioStream) {
             showError('No audio stream available to save.');
+            stateUpdater.setRecordingState(RecordingState.READY);
+            stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
             return;
         }
 
@@ -59,9 +80,10 @@ export async function stopRecordingAction({
         recorderService.stopRecording();
         stateUpdater.setCurrentAudioStream(null);
         stateUpdater.setIsRecordingActive(false);
+        stateUpdater.setRecordingState(RecordingState.READY);
 
         // Update UI to show we're processing
-        stateUpdater.setIsTranscribing(true);
+        stateUpdater.setTranscriptionState(TranscriptionState.TRANSCRIBING);
         sttViewProvider.refresh();
 
         // Save the recording
@@ -128,12 +150,15 @@ export async function stopRecordingAction({
                     });
 
                     logInfo('[StopRecordingAction] Transcription completed successfully.');
+                    stateUpdater.setTranscriptionState(TranscriptionState.COMPLETED);
                 } else {
                     showError('Transcription failed: No result returned.');
+                    stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
                 }
             } catch (error) {
                 logError('[StopRecordingAction] Transcription error:', error);
                 showError(`Transcription failed: ${error}`);
+                stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
                 // Emit transcriptionError event
                 events.emit({
                     type: 'transcriptionError',
@@ -141,10 +166,13 @@ export async function stopRecordingAction({
                     timestamp: Date.now()
                 });
             } finally {
-                stateUpdater.setIsTranscribing(false);
+                // Reset to idle after completion or error
+                setTimeout(() => {
+                    stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
+                }, 2000); // Show completed/error state for 2 seconds
             }
         } else {
-            stateUpdater.setIsTranscribing(false);
+            stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
             showError('No transcription provider available.');
         }
 
@@ -158,7 +186,8 @@ export async function stopRecordingAction({
         // Clean up state on error
         stateUpdater.setCurrentAudioStream(null);
         stateUpdater.setIsRecordingActive(false);
-        stateUpdater.setIsTranscribing(false);
+        stateUpdater.setRecordingState(RecordingState.READY);
+        stateUpdater.setTranscriptionState(TranscriptionState.ERROR);
         
         // Update UI
         sttViewProvider.refresh();
