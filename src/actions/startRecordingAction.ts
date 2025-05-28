@@ -47,8 +47,8 @@ export async function startRecordingAction({
 
         logInfo(`[StartRecordingAction] Starting recording with device ID: ${selectedDeviceId}`);
 
-        // Update state to recording
-        stateUpdater.setRecordingState(RecordingState.RECORDING);
+        // Update state to initializing
+        stateUpdater.setRecordingState(RecordingState.INITIALIZING);
         stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
 
         // Start recording
@@ -57,7 +57,8 @@ export async function startRecordingAction({
         if (success) {
             logInfo('[StartRecordingAction] Recording started successfully.');
             
-            // Update recording state
+            // Update state to recording
+            stateUpdater.setRecordingState(RecordingState.RECORDING);
             stateUpdater.setIsRecordingActive(true);
             
             // Update UI

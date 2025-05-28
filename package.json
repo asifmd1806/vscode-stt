@@ -46,6 +46,11 @@
         },
         "commands": [
             {
+                "command": "speech-to-text-stt.configureProvider",
+                "title": "Configure Transcription Provider",
+                "category": "Speech To Text"
+            },
+            {
                 "command": "speech-to-text-stt.selectMicrophone",
                 "title": "Select Microphone",
                 "category": "Speech To Text"
@@ -87,7 +92,6 @@
                         "groq",
                         "google"
                     ],
-                    "default": "elevenlabs",
                     "description": "Select the transcription provider to use.",
                     "scope": "window"
                 },

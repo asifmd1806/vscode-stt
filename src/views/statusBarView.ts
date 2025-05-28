@@ -43,7 +43,11 @@ export class StatusBarView implements vscode.Disposable {
             }
 
             // Update status bar based on state
-            if (recordingState === RecordingState.RECORDING) {
+            if (recordingState === RecordingState.INITIALIZING) {
+                this.statusBarItem.text = '$(loading~spin) Initializing...';
+                this.statusBarItem.tooltip = 'Initializing recording, please wait...';
+                this.statusBarItem.command = undefined;
+            } else if (recordingState === RecordingState.RECORDING) {
                 this.statusBarItem.text = '$(record) Recording...';
                 this.statusBarItem.tooltip = 'Click to stop recording';
                 this.statusBarItem.command = 'speech-to-text-stt.stopRecording';

@@ -3,6 +3,7 @@
  */
 export enum RecordingState {
     READY = 'ready',
+    INITIALIZING = 'initializing',
     RECORDING = 'recording',
     STOPPING = 'stopping'
 }

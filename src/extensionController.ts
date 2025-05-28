@@ -20,6 +20,7 @@ import { stopRecordingAction } from './actions/stopRecordingAction';
 import { clearHistoryAction } from './actions/clearHistoryAction';
 import { copyHistoryItemAction } from './actions/copyHistoryItemAction';
 import { listSavedRecordings, openRecordingsDirectory } from './utils/fileUtils';
+import { checkAndConfigureProvider, configureProviderCommand } from './commands/configureProviderCommand';
 
 export class ExtensionController {
     // Services
@@ -83,6 +84,12 @@ export class ExtensionController {
         // Ensure recordings directory exists
         await getRecordingsDir(this.context);
 
+        // Check and configure provider if needed (for first-time users)
+        const isProviderConfigured = await checkAndConfigureProvider(this.context);
+        if (!isProviderConfigured) {
+            logInfo('[ExtensionController] Provider configuration was cancelled or failed');
+        }
+
         // Restore selected device
         await this.stateManager.restoreSelectedDevice(this.context);
 
@@ -121,6 +128,11 @@ export class ExtensionController {
 
     private initializeTranscriptionProvider(): void {
         const providerName = getTranscriptionProvider();
+        if (!providerName) {
+            logInfo('[ExtensionController] No transcription provider configured yet');
+            return;
+        }
+        
         this.transcriptionProvider = this.createTranscriptionProvider(providerName);
 
         if (!this.transcriptionProvider) {
@@ -186,6 +198,11 @@ export class ExtensionController {
         };
 
         this.disposables.push(
+            vscode.commands.registerCommand(
+                'speech-to-text-stt.configureProvider',
+                () => configureProviderCommand(this.context, getTranscriptionProvider())
+            ),
+
             vscode.commands.registerCommand(
                 'speech-to-text-stt.selectMicrophone',
                 () => selectMicrophoneAction({ 
@@ -321,6 +338,7 @@ export class ExtensionController {
             vscode.workspace.onDidChangeConfiguration(e => {
                 if (e.affectsConfiguration('speech-to-text-stt.transcriptionProvider')) {
                     const newProvider = getTranscriptionProvider();
+                    if (newProvider) {
                     this.transcriptionProvider = this.createTranscriptionProvider(newProvider);
                     if (this.transcriptionProvider && this.sttViewProvider) {
                         // Update the provider in the view
@@ -328,6 +346,7 @@ export class ExtensionController {
                         vscode.window.registerTreeDataProvider('sttView', this.sttViewProvider);
                     }
                     logInfo(`[ExtensionController] Transcription provider changed to: ${newProvider}`);
+                    }
                 }
             })
         );

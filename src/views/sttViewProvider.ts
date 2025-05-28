@@ -3,6 +3,7 @@ import { IRecorderService, AudioDeviceInfo } from '../services/ffmpegRecorderSer
 import { TranscriptionProvider } from '../providers/baseProvider';
 import { events } from '../events';
 import { SttEvent } from '../events/types';
+import { getTranscriptionProvider } from '../config/settings';
 
 interface TranscriptionHistoryItem {
     text: string;
@@ -16,6 +17,7 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     private transcriptionHistory: TranscriptionHistoryItem[] = [];
     private selectedDeviceId: number = -1;
     private disposables: vscode.Disposable[] = [];
+    private isTranscribing: boolean = false;
 
     constructor(
         private readonly recorderService: IRecorderService,
@@ -49,10 +51,21 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 
                 case 'recordingStarted':
                 case 'recordingStopped':
+                    this.refresh();
+                    break;
+                
                 case 'transcriptionStarted':
+                    this.isTranscribing = true;
+                    this.refresh();
+                    break;
+                
                 case 'transcriptionCompleted':
+                    this.isTranscribing = false;
+                    this.refresh();
+                    break;
+                
                 case 'transcriptionError':
-                    // Refresh the view on these state changes
+                    this.isTranscribing = false;
                     this.refresh();
                     break;
             }
@@ -115,11 +128,70 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     }
 
     async getChildren(element?: vscode.TreeItem): Promise<vscode.TreeItem[]> {
+        // If a header element is expanded, show its children
         if (element) {
+            if (element.contextValue === 'transcriptionHistoryHeader') {
+                const children: vscode.TreeItem[] = [];
+                // Settings item under history
+                const settingsItem = new vscode.TreeItem(
+                    '⚙️ Settings',
+                    vscode.TreeItemCollapsibleState.None
+                );
+                settingsItem.command = {
+                    command: 'speech-to-text-stt.configureProvider',
+                    title: 'Configure Provider'
+                };
+                settingsItem.tooltip = 'Configure transcription provider';
+                children.push(settingsItem);
+                // History entries
+                this.transcriptionHistory.forEach(item => {
+                    const date = new Date(item.timestamp);
+                    const formattedDate = date.toLocaleString();
+                    const truncatedText = item.text.length > 50 ? item.text.substring(0, 50) + '...' : item.text;
+                    const historyItem = new vscode.TreeItem(
+                        `${formattedDate}: ${truncatedText}`,
+                        vscode.TreeItemCollapsibleState.None
+                    );
+                    historyItem.command = {
+                        command: 'speech-to-text-stt.copyHistoryItem',
+                        title: 'Copy Transcription',
+                        arguments: [item.text]
+                    };
+                    historyItem.tooltip = `Click to copy: ${item.text}`;
+                    historyItem.contextValue = 'historyItem';
+                    children.push(historyItem);
+                });
+                return children;
+            }
             return [];
         }
 
         const items: vscode.TreeItem[] = [];
+
+        // Add provider information item
+        const currentProvider = getTranscriptionProvider();
+        const providerDisplayNames: Record<string, string> = {
+            'elevenlabs': 'ElevenLabs',
+            'openai': 'OpenAI',
+            'groq': 'Groq',
+            'google': 'Google Cloud'
+        };
+        
+        const providerItem = new vscode.TreeItem(
+            currentProvider 
+                ? `🔧 Provider: ${providerDisplayNames[currentProvider] || currentProvider}`
+                : '🔧 Provider: Not Configured',
+            vscode.TreeItemCollapsibleState.None
+        );
+        providerItem.command = {
+            command: 'speech-to-text-stt.configureProvider',
+            title: 'Configure Provider'
+        };
+        providerItem.tooltip = currentProvider 
+            ? 'Click to configure or change transcription provider'
+            : 'Click to configure a transcription provider';
+        providerItem.contextValue = 'providerConfig';
+        items.push(providerItem);
 
         // Add device selection item
         const devices = await this.recorderService.getAudioDevices();
@@ -162,7 +234,22 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             items.push(startItem);
         }
 
-        // Add history items
+        // Add separator
+        const separatorItem = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+        separatorItem.description = '─────────────────────';
+        items.push(separatorItem);
+        
+        // Show transcription status if in progress
+        if (this.isTranscribing) {
+            const transcribingItem = new vscode.TreeItem(
+                '$(sync~spin) Transcribing...',
+                vscode.TreeItemCollapsibleState.None
+            );
+            transcribingItem.tooltip = 'Transcription in progress...';
+            items.push(transcribingItem);
+        }
+
+        // Add history header or empty state
         if (this.transcriptionHistory.length > 0) {
             const historyHeader = new vscode.TreeItem(
                 `📝 Transcription History (${this.transcriptionHistory.length})`,
@@ -170,25 +257,6 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             );
             historyHeader.contextValue = 'transcriptionHistoryHeader';
             items.push(historyHeader);
-
-            this.transcriptionHistory.forEach((item, index) => {
-                const date = new Date(item.timestamp);
-                const formattedDate = date.toLocaleString();
-                const truncatedText = item.text.length > 50 ? item.text.substring(0, 50) + '...' : item.text;
-                
-                const historyItem = new vscode.TreeItem(
-                    `${formattedDate}: ${truncatedText}`,
-                    vscode.TreeItemCollapsibleState.None
-                );
-                historyItem.command = {
-                    command: 'speech-to-text-stt.copyHistoryItem',
-                    title: 'Copy Transcription',
-                    arguments: [item.text]
-                };
-                historyItem.tooltip = `Click to copy: ${item.text}`;
-                historyItem.contextValue = 'historyItem';
-                items.push(historyItem);
-            });
         } else {
             // Show a helpful message when no history exists
             const emptyItem = new vscode.TreeItem(

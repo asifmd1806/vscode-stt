@@ -50,10 +50,10 @@ function getConfigSection(section: string): vscode.WorkspaceConfiguration {
 
 // --- Exported Functions to Retrieve Settings ---
 
-export function getTranscriptionProvider(): TranscriptionProvider {
+export function getTranscriptionProvider(): TranscriptionProvider | undefined {
     const config = vscode.workspace.getConfiguration('speech-to-text-stt');
-    // Default to 'elevenlabs' if not set or invalid
-    return config.get<TranscriptionProvider>('transcriptionProvider') || 'elevenlabs';
+    // Return undefined if not set, so we can prompt first-time users
+    return config.get<TranscriptionProvider>('transcriptionProvider');
 }
 
 export function getElevenLabsConfig(): ElevenLabsConfig {
