@@ -15,7 +15,7 @@ export interface AudioDeviceInfo {
 export interface IRecorderService {
     isRecording: boolean;
     getAudioDevices(): Promise<AudioDeviceInfo[]>;
-    startRecording(deviceId?: number): Readable | null;
+    startRecording(deviceId?: number): Promise<Readable | null>;
     stopRecording(): void;
     selectAudioDevice(deviceId: number): Promise<void>;
     onRecordingStateChanged(callback: (isRecording: boolean) => void): void;
@@ -265,7 +265,7 @@ export class FFmpegRecorderService implements IRecorderService {
      * @param deviceId The ID of the audio device to use (-1 for default).
      * @returns A Readable stream of audio data, or null if recording failed to start.
      */
-    startRecording(deviceId: number = -1): Readable | null {
+    async startRecording(deviceId: number = -1): Promise<Readable | null> {
         if (!this.isFfmpegAvailable) {
             showWarn('FFmpeg not available. Cannot start recording.');
             logError("[FFmpegRecorderService] Cannot start recording, ffmpeg not available.");
@@ -282,6 +282,17 @@ export class FFmpegRecorderService implements IRecorderService {
             this.recordingStartTime = Date.now();
             this.currentDeviceId = deviceId;
             
+            // Verify device exists before recording
+            const devices = await this.getAudioDevices();
+            const targetDevice = devices.find(d => d.id === deviceId);
+            if (deviceId !== -1 && !targetDevice) {
+                logError(`[FFmpegRecorderService] Device ID ${deviceId} not found in available devices`);
+                showError(`Selected microphone (ID: ${deviceId}) not found. Please select a different device.`);
+                return null;
+            }
+            
+            logInfo(`[FFmpegRecorderService] Using device: ${targetDevice?.name || 'Default'} (ID: ${deviceId})`);
+            
             // Get device name for the event
             this.getAudioDevices().then(devices => {
                 const device = devices.find(d => d.id === deviceId);
@@ -297,6 +308,7 @@ export class FFmpegRecorderService implements IRecorderService {
                 // For macOS, use :0 for default device or the specific device ID
                 const macDeviceId = deviceId === -1 ? 0 : deviceId;
                 inputArgs = ['-f', inputFormat, '-i', `:${macDeviceId}`];
+                logInfo(`[FFmpegRecorderService] macOS: Using device ID ${macDeviceId} (original: ${deviceId})`);
             } else if (os.platform() === 'win32') {
                 inputFormat = 'dshow';
                 // For Windows, we need to handle device selection differently
@@ -321,6 +333,8 @@ export class FFmpegRecorderService implements IRecorderService {
                 '-f', 'wav',             // WAV format
                 '-avoid_negative_ts', 'make_zero', // Handle timestamp issues
                 '-fflags', '+genpts',    // Generate presentation timestamps
+                '-thread_queue_size', '1024', // Increase thread queue size
+                '-use_wallclock_as_timestamps', '1', // Use wall clock timestamps
                 '-'                      // Output to stdout
             ];
 
@@ -350,9 +364,26 @@ export class FFmpegRecorderService implements IRecorderService {
 
             if (this.ffmpegProcess.stdout) {
                 let bytesReceived = 0;
+                let lastDataTime = Date.now();
+                
                 this.ffmpegProcess.stdout.on('data', (chunk) => {
                     bytesReceived += chunk.length;
+                    lastDataTime = Date.now();
                     logInfo(`[FFmpegRecorderService] Received ${chunk.length} bytes (total: ${bytesReceived})`);
+                });
+                
+                // Monitor for data flow stopping
+                const dataMonitor = setInterval(() => {
+                    const timeSinceLastData = Date.now() - lastDataTime;
+                    if (timeSinceLastData > 2000 && this._isRecording) { // No data for 2 seconds
+                        logError(`[FFmpegRecorderService] No audio data received for ${timeSinceLastData}ms - possible device issue`);
+                        clearInterval(dataMonitor);
+                    }
+                }, 1000);
+                
+                this.ffmpegProcess.stdout.on('end', () => {
+                    clearInterval(dataMonitor);
+                    logInfo(`[FFmpegRecorderService] Audio stream ended. Total bytes: ${bytesReceived}`);
                 });
                 
                 this.ffmpegProcess.stdout.pipe(this.audioStream);

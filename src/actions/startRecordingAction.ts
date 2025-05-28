@@ -66,7 +66,7 @@ export async function startRecordingAction({
         logInfo(`[StartRecordingAction] Starting recording with device ID: ${selectedDeviceId ?? 'undefined (will use default)'}`);
 
         // Start recording
-        const audioStream = recorderService.startRecording(selectedDeviceId);
+        const audioStream = await recorderService.startRecording(selectedDeviceId);
         if (!audioStream) {
             showError('Failed to start recording.');
             stateUpdater.setRecordingState(RecordingState.READY);
