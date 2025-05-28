@@ -56,7 +56,7 @@
                 "category": "Speech To Text"
             },
             {
-                "command": "speech-to-text-stt.stopRecordingAndTranscribe",
+                "command": "speech-to-text-stt.stopRecording",
                 "title": "Stop Recording & Transcribe",
                 "category": "Speech To Text"
             },
@@ -311,7 +311,26 @@
                     "group": "navigation@1"
                 }
             ]
-        }
+        },
+        "keybindings": [
+            {
+                "command": "speech-to-text-stt.startRecording",
+                "key": "ctrl+shift+r",
+                "mac": "cmd+shift+r",
+                "when": "!speechToTextStt.isRecordingActive"
+            },
+            {
+                "command": "speech-to-text-stt.stopRecording",
+                "key": "ctrl+shift+s",
+                "mac": "cmd+shift+s",
+                "when": "speechToTextStt.isRecordingActive"
+            },
+            {
+                "command": "speech-to-text-stt.selectMicrophone",
+                "key": "ctrl+shift+m",
+                "mac": "cmd+shift+m"
+            }
+        ]
     },
     "scripts": {
         "vscode:prepublish": "webpack --mode production --devtool hidden-source-map",

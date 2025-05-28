@@ -138,6 +138,14 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
             );
             emptyItem.tooltip = 'Start recording to see transcriptions here';
             items.push(emptyItem);
+            
+            // Add getting started tips
+            const tipItem = new vscode.TreeItem(
+                '💡 Press Cmd+Shift+R to start recording',
+                vscode.TreeItemCollapsibleState.None
+            );
+            tipItem.tooltip = 'Use keyboard shortcuts for quick access';
+            items.push(tipItem);
         }
 
         return items;

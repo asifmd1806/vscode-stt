@@ -54,70 +54,276 @@ enum TranscriptionState {
     ERROR = 'error'
 }
 
-// Runtime State
-let currentAudioStream: Readable | null = null;
-let selectedDeviceId: number | undefined = undefined;
-let transcriptionHistory: { text: string; timestamp: number }[] = [];
-let isRecordingDisposable: vscode.Disposable | null = null;
-let audioChunks: Buffer[] = [];
+// Centralized State Store
+class ExtensionState {
+    private _recordingState: RecordingState = RecordingState.READY;
+    private _transcriptionState: TranscriptionState = TranscriptionState.IDLE;
+    private _currentAudioStream: Readable | null = null;
+    private _selectedDeviceId: number | undefined = undefined;
+    private _transcriptionHistory: { text: string; timestamp: number }[] = [];
+    private _isRecordingDisposable: vscode.Disposable | null = null;
+    private _context: vscode.ExtensionContext | null = null;
+    private _recordingStartTime: number | null = null;
+    private _recordingDurationInterval: NodeJS.Timeout | null = null;
 
-// State variables
-let recordingState: RecordingState = RecordingState.READY;
-let transcriptionState: TranscriptionState = TranscriptionState.IDLE;
+    constructor() {}
 
-// --- State Update Proxy (Centralized updates and UI triggers) ---
-const stateUpdater = {
-    setSelectedDeviceId: (deviceId: number | undefined) => {
-        selectedDeviceId = deviceId;
-        console.log(`[Extension] Selected Device ID updated: ${deviceId}`);
-    },
-    setCurrentAudioStream: (stream: Readable | null) => {
-        currentAudioStream = stream;
-        console.log(`[Extension] Audio stream ${stream ? 'set' : 'cleared'}`);
-    },
-    setRecordingState: (state: RecordingState) => {
-        recordingState = state;
-        console.log(`[Extension] Recording state updated to: ${state}`);
+    setContext(context: vscode.ExtensionContext) {
+        this._context = context;
+    }
+
+    get recordingState(): RecordingState {
+        return this._recordingState;
+    }
+
+    get transcriptionState(): TranscriptionState {
+        return this._transcriptionState;
+    }
+
+    get currentAudioStream(): Readable | null {
+        return this._currentAudioStream;
+    }
+
+    get selectedDeviceId(): number | undefined {
+        return this._selectedDeviceId;
+    }
+
+    get transcriptionHistory(): { text: string; timestamp: number }[] {
+        return [...this._transcriptionHistory];
+    }
+
+    setSelectedDeviceId(deviceId: number | undefined) {
+        this._selectedDeviceId = deviceId;
+        if (this._context && deviceId !== undefined) {
+            this._context.globalState.update('selectedDeviceId', deviceId);
+            this._context.globalState.update('hasSelectedMicrophone', true);
+        }
+        logInfo(`[Extension] Selected Device ID updated: ${deviceId}`);
+        this.notifyStateChange();
+    }
+
+    setCurrentAudioStream(stream: Readable | null) {
+        this._currentAudioStream = stream;
+        logInfo(`[Extension] Audio stream ${stream ? 'set' : 'cleared'}`);
+    }
+
+    setRecordingState(state: RecordingState) {
+        this._recordingState = state;
+        logInfo(`[Extension] Recording state updated to: ${state}`);
+        
+        // Track recording duration
+        if (state === RecordingState.RECORDING) {
+            this._recordingStartTime = Date.now();
+            this.startRecordingDurationTimer();
+        } else {
+            this.stopRecordingDurationTimer();
+            this._recordingStartTime = null;
+        }
+        
         updateStatusBar();
-    },
-    setTranscriptionState: (state: TranscriptionState) => {
-        transcriptionState = state;
-        console.log(`[Extension] Transcription state updated to: ${state}`);
+        this.notifyStateChange();
+    }
+
+    setTranscriptionState(state: TranscriptionState) {
+        this._transcriptionState = state;
+        logInfo(`[Extension] Transcription state updated to: ${state}`);
         updateStatusBar();
-    },
-    addTranscriptionResult: (text: string) => {
+        this.notifyStateChange();
+    }
+
+    addTranscriptionResult(text: string) {
         const newItem = { text, timestamp: Date.now() };
-        transcriptionHistory.unshift(newItem);
-        console.log(`[Extension] Added to history. New length: ${transcriptionHistory.length}`);
+        this._transcriptionHistory.unshift(newItem);
+        logInfo(`[Extension] Added to history. New length: ${this._transcriptionHistory.length}`);
         sttViewProvider?.addTranscriptionItem(text, newItem.timestamp);
-    },
-    clearTranscriptionHistory: () => {
-        transcriptionHistory = [];
-        console.log("[Extension] Transcription history cleared.");        sttViewProvider?.clearTranscriptionHistory();
-    },
-    setIsRecordingActive: (isRecording: boolean) => {
+        
+        // Handle auto-copy and auto-insert
+        this.handleTranscriptionActions(text);
+        this.notifyStateChange();
+    }
+
+    clearTranscriptionHistory() {
+        this._transcriptionHistory = [];
+        logInfo("[Extension] Transcription history cleared.");
+        sttViewProvider?.clearTranscriptionHistory();
+        this.notifyStateChange();
+    }
+
+    setIsRecordingActive(isRecording: boolean) {
         try {
-            const tempDisposable = isRecordingDisposable;
-            isRecordingDisposable = null;
+            const tempDisposable = this._isRecordingDisposable;
+            this._isRecordingDisposable = null;
             
             vscode.commands.executeCommand('setContext', 'speechToTextStt.isRecordingActive', isRecording);
-            console.log(`[Extension] Recording context set to: ${isRecording}`);
+            logInfo(`[Extension] Recording context set to: ${isRecording}`);
             
             if (!isRecording && tempDisposable) {
                 try {
                     tempDisposable.dispose();
                 } catch (error) {
-                    console.error("[Extension] Error disposing recording context:", error);
+                    logError("[Extension] Error disposing recording context:", error);
                 }
             }
         } catch (error) {
-            console.error("[Extension] Error in setIsRecordingActive:", error);
+            logError("[Extension] Error in setIsRecordingActive:", error);
         }
-    },
-    ensureMicrophoneSelected: async (): Promise<boolean> => {
-        // This will be set in the activate function
-        return false;
     }
+
+    async ensureMicrophoneSelected(): Promise<boolean> {
+        if (!this._context) {
+            logError('[Extension] Context not initialized');
+            return false;
+        }
+
+        // Check if we have a valid selected device
+        if (this._selectedDeviceId !== undefined) {
+            // Verify the device still exists
+            const devices = await recorderService.getAudioDevices();
+            const deviceExists = devices.some(d => d.id === this._selectedDeviceId);
+            if (deviceExists) {
+                return true;
+            }
+            // Device no longer exists, clear selection
+            this._selectedDeviceId = undefined;
+            this._context.globalState.update('selectedDeviceId', undefined);
+            this._context.globalState.update('hasSelectedMicrophone', false);
+        }
+
+        // Prompt for device selection
+        return await this.promptMicrophoneSelection();
+    }
+
+    private async promptMicrophoneSelection(): Promise<boolean> {
+        try {
+            logInfo('[Extension] Prompting user to select microphone...');
+            
+            const devices = await recorderService.getAudioDevices();
+            if (!devices || devices.length === 0 || devices[0].id === -1) {
+                showError('No audio devices found. Please check your microphone connection.');
+                return false;
+            }
+
+            // Show device selection dialog
+            const items = devices.map(device => ({
+                label: device.name,
+                description: device.label,
+                deviceId: device.id
+            }));
+
+            const selected = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Select a microphone for Speech to Text',
+                ignoreFocusOut: true
+            });
+
+            if (!selected) {
+                logInfo('[Extension] User cancelled microphone selection');
+                return false;
+            }
+
+            // Save the selected device
+            this.setSelectedDeviceId(selected.deviceId);
+            await recorderService.selectAudioDevice(selected.deviceId);
+            
+            logInfo(`[Extension] User selected microphone: ${selected.label} (ID: ${selected.deviceId})`);
+            return true;
+
+        } catch (error) {
+            logError('[Extension] Error during microphone selection:', error);
+            showError(`Failed to select microphone: ${error}`);
+            return false;
+        }
+    }
+
+    private handleTranscriptionActions(text: string) {
+        // Auto-copy to clipboard
+        if (getGeneralSetting('copyToClipboardAfterTranscription')) {
+            vscode.env.clipboard.writeText(text);
+            vscode.window.showInformationMessage('Transcription copied to clipboard');
+        }
+
+        // Auto-insert into editor
+        if (getGeneralSetting('insertIntoEditorAfterTranscription')) {
+            const editor = vscode.window.activeTextEditor;
+            if (editor) {
+                editor.edit(editBuilder => {
+                    editBuilder.insert(editor.selection.active, text);
+                });
+            }
+        }
+    }
+
+    async showTranscriptionProgress<T>(
+        title: string,
+        task: () => Promise<T>
+    ): Promise<T | undefined> {
+        return vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: title,
+            cancellable: false
+        }, async (progress) => {
+            progress.report({ increment: 0, message: 'Processing audio...' });
+            
+            try {
+                const result = await task();
+                progress.report({ increment: 100, message: 'Complete!' });
+                return result;
+            } catch (error) {
+                logError('[Extension] Error during transcription:', error);
+                throw error;
+            }
+        });
+    }
+
+    private notifyStateChange() {
+        // Update view provider with current state
+        if (sttViewProvider) {
+            sttViewProvider.updateSelectedDevice(this._selectedDeviceId);
+            sttViewProvider.updateTranscriptionHistory(this._transcriptionHistory);
+        }
+    }
+
+    private startRecordingDurationTimer() {
+        this.stopRecordingDurationTimer(); // Clear any existing timer
+        
+        this._recordingDurationInterval = setInterval(() => {
+            if (this._recordingStartTime && statusBarItem) {
+                const duration = Math.floor((Date.now() - this._recordingStartTime) / 1000);
+                const minutes = Math.floor(duration / 60);
+                const seconds = duration % 60;
+                const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                statusBarItem.text = `$(record) Recording... ${timeStr}`;
+            }
+        }, 1000);
+    }
+    
+    private stopRecordingDurationTimer() {
+        if (this._recordingDurationInterval) {
+            clearInterval(this._recordingDurationInterval);
+            this._recordingDurationInterval = null;
+        }
+    }
+
+    dispose() {
+        if (this._isRecordingDisposable) {
+            this._isRecordingDisposable.dispose();
+        }
+        this.stopRecordingDurationTimer();
+    }
+}
+
+// Global state instance
+const extensionState = new ExtensionState();
+
+// --- State Update Proxy (for backward compatibility) ---
+const stateUpdater = {
+    setSelectedDeviceId: (deviceId: number | undefined) => extensionState.setSelectedDeviceId(deviceId),
+    setCurrentAudioStream: (stream: Readable | null) => extensionState.setCurrentAudioStream(stream),
+    setRecordingState: (state: RecordingState) => extensionState.setRecordingState(state),
+    setTranscriptionState: (state: TranscriptionState) => extensionState.setTranscriptionState(state),
+    addTranscriptionResult: (text: string) => extensionState.addTranscriptionResult(text),
+    clearTranscriptionHistory: () => extensionState.clearTranscriptionHistory(),
+    setIsRecordingActive: (isRecording: boolean) => extensionState.setIsRecordingActive(isRecording),
+    ensureMicrophoneSelected: () => extensionState.ensureMicrophoneSelected()
 };
 
 // --- Status Bar Update Function ---
@@ -125,6 +331,9 @@ function updateStatusBar() {
     if (!statusBarItem) return;
     
     try {
+        const recordingState = extensionState.recordingState;
+        const transcriptionState = extensionState.transcriptionState;
+
         if (recordingState === RecordingState.RECORDING) {
             statusBarItem.text = '$(record) Recording...';
             statusBarItem.tooltip = 'Click to stop recording';
@@ -150,13 +359,13 @@ function updateStatusBar() {
         
         statusBarItem.show();
     } catch (error) {
-        console.error('[Extension] Error updating status bar:', error);
+        logError('[Extension] Error updating status bar:', error);
     }
 }
 
 // --- Factory Function for Transcription Provider ---
 function createTranscriptionProvider(providerName: ProviderType): TranscriptionProvider | null {
-    console.log(`[Extension] Attempting to create transcription provider: ${providerName}`);
+    logInfo(`[Extension] Attempting to create transcription provider: ${providerName}`);
     try {
         switch (providerName) {
             case 'elevenlabs':
@@ -168,11 +377,11 @@ function createTranscriptionProvider(providerName: ProviderType): TranscriptionP
             case 'google':
                 return new GoogleProvider(outputChannel);
             default:
-                console.warn(`[Extension] Unknown provider name encountered in factory: ${providerName}`);
+                logError(`[Extension] Unknown provider name: ${providerName}`);
                 return null;
         }
     } catch (error) {
-        console.error(`[Extension] Error instantiating provider ${providerName}:`, error);
+        logError(`[Extension] Error instantiating provider ${providerName}:`, error);
         vscode.window.showErrorMessage(`Failed to initialize transcription provider for ${providerName}. See logs.`);
         return null;
     }
@@ -181,6 +390,9 @@ function createTranscriptionProvider(providerName: ProviderType): TranscriptionP
 // --- Extension Activation --- 
 export async function activate(context: vscode.ExtensionContext) {
     logInfo('Speech-to-Text extension is now active!');
+
+    // Initialize state with context
+    extensionState.setContext(context);
 
     // 1. Create Output Channel
     outputChannel = vscode.window.createOutputChannel("Speech To Text STT");
@@ -196,12 +408,24 @@ export async function activate(context: vscode.ExtensionContext) {
     
     // Listen for recording state changes to handle failures
     recorderService.onRecordingStateChanged((isRecording) => {
-        if (!isRecording) {
-            // Recording stopped (could be due to failure)
-            stateUpdater.setCurrentAudioStream(null);
-            stateUpdater.setIsRecordingActive(false);
-            stateUpdater.setRecordingState(RecordingState.READY);
-            stateUpdater.setTranscriptionState(TranscriptionState.IDLE);
+        if (!isRecording && extensionState.recordingState === RecordingState.RECORDING) {
+            // Recording stopped unexpectedly (could be due to failure)
+            extensionState.setCurrentAudioStream(null);
+            extensionState.setIsRecordingActive(false);
+            extensionState.setRecordingState(RecordingState.READY);
+            extensionState.setTranscriptionState(TranscriptionState.IDLE);
+            
+            // Check if device is still available
+            if (extensionState.selectedDeviceId !== undefined) {
+                recorderService.getAudioDevices().then(devices => {
+                    const deviceExists = devices.some(d => d.id === extensionState.selectedDeviceId);
+                    if (!deviceExists) {
+                        // Device was disconnected, clear selection
+                        extensionState.setSelectedDeviceId(undefined);
+                        vscode.window.showWarningMessage('Microphone disconnected. Please select a new device.');
+                    }
+                });
+            }
         }
     });
     
@@ -226,6 +450,10 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.window.registerTreeDataProvider('sttView', sttViewProvider)
         );
+        
+        // Make the view visible by default
+        vscode.commands.executeCommand('sttView.focus');
+        
         logInfo("[Extension] TreeView provider registered.");
     }
 
@@ -234,10 +462,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(statusBarItem);
     
     // Set initial status bar state
-    statusBarItem.text = '$(mic) STT';
-    statusBarItem.tooltip = 'Speech to Text - Click to start recording';
-    statusBarItem.command = 'speech-to-text-stt.startRecording';
-    statusBarItem.show();
+    updateStatusBar();
     
     // Setup status bar event handlers and store disposable
     statusBarDisposable = setupStatusBar(statusBarItem);
@@ -245,34 +470,19 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(statusBarDisposable);
     }
     
-    // Add hover menu for status bar
-    context.subscriptions.push(
-        vscode.commands.registerCommand('speech-to-text-stt.statusBarHover', async () => {
-            if (!recorderService.isRecording) {
-                const items = [
-                    {
-                        label: 'Select Microphone',
-                        command: 'speech-to-text-stt.selectMicrophone'
-                    }
-                ];
-                
-                const selected = await vscode.window.showQuickPick(items, {
-                    placeHolder: 'Select an action'
-                });
-                
-                if (selected) {
-                    vscode.commands.executeCommand(selected.command);
-                }
-            }
-        })
-    );
-    
     logInfo("[Extension] Status bar item created.");
 
     // 6. Ensure Recordings Directory Exists
     getRecordingsDir(context);
 
-    // 7. Register Commands
+    // 7. Restore selected device ID from global state
+    const savedDeviceId = context.globalState.get<number>('selectedDeviceId');
+    if (savedDeviceId !== undefined) {
+        extensionState.setSelectedDeviceId(savedDeviceId);
+        logInfo(`[Extension] Restored selected device ID: ${savedDeviceId}`);
+    }
+
+    // 8. Register Commands
     logInfo("[Extension] Registering commands...");
 
     context.subscriptions.push(vscode.commands.registerCommand(
@@ -286,25 +496,33 @@ export async function activate(context: vscode.ExtensionContext) {
             recorderService, 
             stateUpdater,
             sttViewProvider,
-            selectedDeviceId,
-            recordingState,
-            transcriptionState
+            selectedDeviceId: extensionState.selectedDeviceId,
+            recordingState: extensionState.recordingState,
+            transcriptionState: extensionState.transcriptionState
         })
     ));
 
+    // Register both stopRecording and stopRecordingAndTranscribe for compatibility
+    const stopRecordingHandler = () => stopRecordingAction({ 
+        recorderService, 
+        transcriptionProvider,
+        stateUpdater,
+        sttViewProvider,
+        selectedDeviceId: extensionState.selectedDeviceId,
+        recordingState: extensionState.recordingState,
+        transcriptionState: extensionState.transcriptionState,
+        context,
+        outputChannel
+    });
+
     context.subscriptions.push(vscode.commands.registerCommand(
         'speech-to-text-stt.stopRecording',
-        () => stopRecordingAction({ 
-            recorderService, 
-            transcriptionProvider,
-            stateUpdater,
-            sttViewProvider,
-            selectedDeviceId,
-            recordingState,
-            transcriptionState,
-            context,
-            outputChannel
-        })
+        stopRecordingHandler
+    ));
+
+    context.subscriptions.push(vscode.commands.registerCommand(
+        'speech-to-text-stt.stopRecordingAndTranscribe',
+        stopRecordingHandler
     ));
 
     context.subscriptions.push(vscode.commands.registerCommand(
@@ -375,73 +593,23 @@ export async function activate(context: vscode.ExtensionContext) {
     ));
 
     // Set initial context for when clause
-    stateUpdater.setIsRecordingActive(false);
+    extensionState.setIsRecordingActive(false);
 
-    // Restore selected device ID from global state
-    const savedDeviceId = context.globalState.get<number>('selectedDeviceId');
-    if (savedDeviceId !== undefined) {
-        selectedDeviceId = savedDeviceId;
-        stateUpdater.setSelectedDeviceId(savedDeviceId);
-        logInfo(`[Extension] Restored selected device ID: ${savedDeviceId}`);
-    }
-
-    // Function to ensure microphone is selected before recording
-    async function ensureMicrophoneSelected(): Promise<boolean> {
-        const hasSelectedMicrophone = context.globalState.get<boolean>('hasSelectedMicrophone', false);
-        
-        if (hasSelectedMicrophone && selectedDeviceId !== undefined) {
-            // Already have a selected device
-            return true;
-        }
-
-        try {
-            logInfo('[Extension] Prompting user to select microphone for first time...');
-            
-            const devices = await recorderService.getAudioDevices();
-            if (!devices || devices.length === 0 || devices[0].id === -1) {
-                showError('No audio devices found. Please check your microphone connection.');
-                return false;
+    // Listen for configuration changes
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('speech-to-text-stt.transcriptionProvider')) {
+                const newProvider = getTranscriptionProvider();
+                transcriptionProvider = createTranscriptionProvider(newProvider);
+                if (transcriptionProvider && sttViewProvider) {
+                    // Update the provider in the view
+                    sttViewProvider = new SttViewProvider(recorderService, transcriptionProvider);
+                    vscode.window.registerTreeDataProvider('sttView', sttViewProvider);
+                }
+                logInfo(`[Extension] Transcription provider changed to: ${newProvider}`);
             }
-
-            // Show device selection dialog
-            const items = devices.map(device => ({
-                label: device.name,
-                description: device.label,
-                deviceId: device.id
-            }));
-
-            const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: 'Select a microphone for Speech to Text',
-                ignoreFocusOut: true // Don't dismiss if user clicks elsewhere
-            });
-
-            if (!selected) {
-                // User cancelled selection
-                logInfo('[Extension] User cancelled microphone selection');
-                return false;
-            }
-
-            // Save the selected device
-            selectedDeviceId = selected.deviceId;
-            stateUpdater.setSelectedDeviceId(selected.deviceId);
-            await recorderService.selectAudioDevice(selected.deviceId);
-            
-            // Save to global state
-            context.globalState.update('selectedDeviceId', selected.deviceId);
-            context.globalState.update('hasSelectedMicrophone', true);
-            
-            logInfo(`[Extension] User selected microphone: ${selected.label} (ID: ${selected.deviceId})`);
-            return true;
-
-        } catch (error) {
-            logError('[Extension] Error during microphone selection:', error);
-            showError(`Failed to select microphone: ${error}`);
-            return false;
-        }
-    }
-
-    // Update the stateUpdater with the actual function
-    stateUpdater.ensureMicrophoneSelected = ensureMicrophoneSelected;
+        })
+    );
 
     // Emit extension activated event
     events.emit({
@@ -467,19 +635,8 @@ export function deactivate() {
             }
         }
         
-        // Store and nullify isRecordingDisposable reference to prevent recursion
-        const tempDisposable = isRecordingDisposable;
-        isRecordingDisposable = null;
-        
-        // Dispose context setter if exists
-        if (tempDisposable) {
-            try {
-                tempDisposable.dispose();
-                logInfo('[Extension] Recording disposable cleaned up.');
-            } catch (error) {
-                logError('[Extension] Error disposing recording disposable:', error);
-            }
-        }
+        // Dispose extension state
+        extensionState.dispose();
         
         // Dispose status bar and its event listeners
         if (statusBarDisposable) {
@@ -525,7 +682,7 @@ export function deactivate() {
         
         logInfo('[Extension] Deactivation complete.');
     } catch (error) {
-        console.error('[Extension] Error during deactivation:', error);
+        logError('[Extension] Error during deactivation:', error);
         events.emit({
             type: 'extensionError',
             error: error instanceof Error ? error : new Error(String(error)),
