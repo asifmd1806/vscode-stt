@@ -148,34 +148,11 @@ export class GoogleProvider extends BaseTranscriptionProvider {
                     content: audioBytes,
                 },
                 config: {
-                    encoding: this.config.encoding || 'WEBM_OPUS',
-                    sampleRateHertz: this.config.sampleRateHertz || 16000,
+                    encoding: 'LINEAR16',  // Fixed for WAV files with PCM
+                    sampleRateHertz: 44100,  // Fixed to match recorder
                     languageCode: this.config.languageCode || 'en-US',
                 },
             };
-
-            // Add optional parameters if they exist
-            if (this.config.alternativeLanguageCodes && this.config.alternativeLanguageCodes.length > 0) {
-                request.config.alternativeLanguageCodes = this.config.alternativeLanguageCodes;
-            }
-            if (this.config.maxAlternatives !== undefined) {
-                request.config.maxAlternatives = this.config.maxAlternatives;
-            }
-            if (this.config.profanityFilter !== undefined) {
-                request.config.profanityFilter = this.config.profanityFilter;
-            }
-            if (this.config.enableWordTimeOffsets !== undefined) {
-                request.config.enableWordTimeOffsets = this.config.enableWordTimeOffsets;
-            }
-            if (this.config.enableAutomaticPunctuation !== undefined) {
-                request.config.enableAutomaticPunctuation = this.config.enableAutomaticPunctuation;
-            }
-            if (this.config.model) {
-                request.config.model = this.config.model;
-            }
-            if (this.config.useEnhanced !== undefined) {
-                request.config.useEnhanced = this.config.useEnhanced;
-            }
 
             const [response] = await this.client.recognize(request);
             

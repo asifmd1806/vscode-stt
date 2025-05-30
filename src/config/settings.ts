@@ -29,15 +29,6 @@ export interface GoogleConfig {
     credentialsPath?: string;
     projectId?: string;
     languageCode: string; // Has default
-    encoding?: string;
-    sampleRateHertz?: number;
-    alternativeLanguageCodes?: string[];
-    maxAlternatives?: number;
-    profanityFilter?: boolean;
-    enableWordTimeOffsets?: boolean;
-    enableAutomaticPunctuation?: boolean;
-    model?: string;
-    useEnhanced?: boolean;
 }
 
 export type TranscriptionProvider = 'elevenlabs' | 'openai' | 'groq' | 'google';
@@ -94,15 +85,6 @@ export function getGoogleConfig(): GoogleConfig {
         credentialsPath: config.get<string>('credentialsPath'),
         projectId: config.get<string>('projectId'),
         languageCode: config.get<string>('languageCode') || 'en-US',
-        encoding: config.get<string>('encoding') || 'WEBM_OPUS',
-        sampleRateHertz: config.get<number>('sampleRateHertz') || 16000,
-        alternativeLanguageCodes: config.get<string[]>('alternativeLanguageCodes'),
-        maxAlternatives: config.get<number>('maxAlternatives'),
-        profanityFilter: config.get<boolean>('profanityFilter'),
-        enableWordTimeOffsets: config.get<boolean>('enableWordTimeOffsets'),
-        enableAutomaticPunctuation: config.get<boolean>('enableAutomaticPunctuation') ?? true,
-        model: config.get<string>('model') || 'chirp',
-        useEnhanced: config.get<boolean>('useEnhanced'),
     };
 }
 
