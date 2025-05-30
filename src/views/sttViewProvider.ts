@@ -132,17 +132,6 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         if (element) {
             if (element.contextValue === 'transcriptionHistoryHeader') {
                 const children: vscode.TreeItem[] = [];
-                // Settings item under history
-                const settingsItem = new vscode.TreeItem(
-                    '⚙️ Settings',
-                    vscode.TreeItemCollapsibleState.None
-                );
-                settingsItem.command = {
-                    command: 'speech-to-text-stt.configureProvider',
-                    title: 'Configure Provider'
-                };
-                settingsItem.tooltip = 'Configure transcription provider';
-                children.push(settingsItem);
                 // History entries
                 this.transcriptionHistory.forEach(item => {
                     const date = new Date(item.timestamp);
@@ -167,6 +156,19 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         }
 
         const items: vscode.TreeItem[] = [];
+
+        // Add the general settings item to the root
+        const generalSettingsItem = new vscode.TreeItem(
+            '⚙️ Settings',
+            vscode.TreeItemCollapsibleState.None
+        );
+        generalSettingsItem.command = {
+            command: 'workbench.action.openSettings',
+            title: 'Open Extension Settings',
+            arguments: ['@ext:asifmohammed.speech-to-text-stt']
+        };
+        generalSettingsItem.tooltip = 'Configure Speech To Text STT extension';
+        items.push(generalSettingsItem);
 
         // Add provider information item
         const currentProvider = getTranscriptionProvider();

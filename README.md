@@ -70,18 +70,21 @@ Configure the extension via VS Code settings (File > Preferences > Settings, or 
         *   *(Optional)* `speech-to-text-stt.elevenlabs.modelId`: Model ID (default: `scribe_v1`).
         *   *(Optional)* `speech-to-text-stt.elevenlabs.languageCode`: BCP-47 language code (e.g., `en`, `es`). Leave empty for auto-detect.
         *   *(Optional)* `speech-to-text-stt.elevenlabs.numSpeakers`: Number of speakers hint (1-32).
+        *   [Learn how to get an ElevenLabs API key](docs/ELEVENLABS_API.md)
     *   **OpenAI:**
         *   `speech-to-text-stt.openai.apiKey`: Your OpenAI API key.
         *   *(Optional)* `speech-to-text-stt.openai.modelId`: Model ID (default: `whisper-1`).
         *   *(Optional)* `speech-to-text-stt.openai.language`: ISO-639-1 language code (e.g., `en`, `es`).
         *   *(Optional)* `speech-to-text-stt.openai.prompt`: Text to guide the model.
         *   *(Optional)* `speech-to-text-stt.openai.temperature`: Sampling temperature (0-1).
+        *   [Learn how to get an OpenAI API key](docs/OPENAI_API.md)
     *   **Groq:**
         *   `speech-to-text-stt.groq.apiKey`: Your Groq API key.
         *   *(Optional)* `speech-to-text-stt.groq.modelId`: Model ID (default: `whisper-large-v3-turbo`).
         *   *(Optional)* `speech-to-text-stt.groq.language`: ISO-639-1 language code.
         *   *(Optional)* `speech-to-text-stt.groq.prompt`: Text to guide the model.
         *   *(Optional)* `speech-to-text-stt.groq.temperature`: Sampling temperature (0-1, default 0).
+        *   [Learn how to get a Groq API key](docs/GROQ_API.md)
     *   **Google Cloud Speech-to-Text:**
         *   `speech-to-text-stt.google.credentialsPath`: Path to your Google Cloud service account credentials JSON file.
         *   `speech-to-text-stt.google.projectId`: Your Google Cloud Project ID.
@@ -90,6 +93,7 @@ Configure the extension via VS Code settings (File > Preferences > Settings, or 
         *   *(Optional)* `speech-to-text-stt.google.sampleRateHertz`: Sample rate in Hz (default: 16000).
         *   *(Optional)* `speech-to-text-stt.google.model`: Speech model (default: `chirp`).
         *   *(Optional)* `speech-to-text-stt.google.alternativeLanguageCodes`: Array of alternative language codes.
+        *   [Learn how to set up Google Cloud Speech-to-Text](docs/GOOGLE_API.md)
 
 **General Options:**
 
