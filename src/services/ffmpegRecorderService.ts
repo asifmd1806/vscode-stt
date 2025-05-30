@@ -335,7 +335,7 @@ export class FFmpegRecorderService implements IRecorderService {
                 ...inputArgs,
                 '-acodec', 'pcm_s16le',  // 16-bit PCM
                 '-ar', '44100',          // 44.1kHz sample rate
-                '-ac', '2',              // Stereo
+                '-ac', '1',              // Mono ( for compatibility with speech recognition APIs)
                 '-f', 'wav',             // WAV format
                 '-avoid_negative_ts', 'make_zero', // Handle timestamp issues
                 '-fflags', '+genpts',    // Generate presentation timestamps
