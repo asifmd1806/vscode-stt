@@ -6,8 +6,10 @@ export interface ExtensionStateData {
     transcriptionState: TranscriptionState;
     currentAudioStream: Readable | null;
     selectedDeviceId: number | undefined;
+    selectedDeviceName?: string;
     transcriptionHistory: TranscriptionHistoryItem[];
     recordingStartTime: number | null;
+    isFfmpegAvailable?: boolean;
 }
 
 export interface TranscriptionHistoryItem {
@@ -28,6 +30,7 @@ export interface StateManager {
     addTranscriptionResult(text: string): void;
     clearTranscriptionHistory(): void;
     setRecordingStartTime(time: number | null): void;
+    setFfmpegAvailable(isAvailable: boolean): void; // Added this line
     onStateChange(listener: StateChangeListener): void;
     removeStateChangeListener(listener: StateChangeListener): void;
 } 

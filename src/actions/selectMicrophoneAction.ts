@@ -8,6 +8,7 @@ interface SelectMicrophoneActionArgs {
     recorderService: IRecorderService;
     stateUpdater: {
         setSelectedDeviceId: (deviceId: number | undefined) => void;
+        setSelectedDeviceName: (deviceName: string | undefined) => void;
     };
     context?: vscode.ExtensionContext;
 }
@@ -53,6 +54,7 @@ export async function selectMicrophoneAction({
             // Update selected device
             await recorderService.selectAudioDevice(selected.deviceId);
             stateUpdater.setSelectedDeviceId(selected.deviceId);
+            stateUpdater.setSelectedDeviceName(selected.label);
             
             // Save to global state if context is available
             if (context) {

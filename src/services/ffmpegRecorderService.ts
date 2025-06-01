@@ -34,8 +34,10 @@ export class FFmpegRecorderService implements IRecorderService {
     private currentDeviceName: string = '';
     private currentRecordingPath: string | null = null;
     private context: vscode.ExtensionContext | null = null;
+    private readonly stateManager: StateManager; // Added stateManager
 
-    constructor(context?: vscode.ExtensionContext) {
+    constructor(stateManager: StateManager, context?: vscode.ExtensionContext) { // Added stateManager
+        this.stateManager = stateManager; // Added stateManager
         this.context = context || null;
         this.detectFfmpeg();
     }
@@ -64,6 +66,7 @@ export class FFmpegRecorderService implements IRecorderService {
                 this.ffmpegPath = ffmpegPathResult;
                 logInfo(`[FFmpegRecorderService] Found FFmpeg in PATH at: ${ffmpegPathResult}`);
                 this.isFfmpegAvailable = true;
+                this.stateManager.setFfmpegAvailable(true); // Added this line
                 return;
             }
 
@@ -105,6 +108,7 @@ export class FFmpegRecorderService implements IRecorderService {
                     if (ffmpegCheckResult) {
                         this.ffmpegPath = location;
                         this.isFfmpegAvailable = true;
+                        this.stateManager.setFfmpegAvailable(true); // Added this line
                         logInfo(`[FFmpegRecorderService] Found FFmpeg at: ${location}`);
                         return;
                     }
@@ -115,6 +119,7 @@ export class FFmpegRecorderService implements IRecorderService {
 
             // If we got here, FFmpeg wasn't found
             this.isFfmpegAvailable = false;
+            this.stateManager.setFfmpegAvailable(false); // Added this line
             logError("[FFmpegRecorderService] FFmpeg not found in PATH or common locations");
             
             let installInstructions = '';
@@ -130,6 +135,7 @@ export class FFmpegRecorderService implements IRecorderService {
             
         } catch (error) {
             this.isFfmpegAvailable = false;
+            this.stateManager.setFfmpegAvailable(false); // Added this line
             logError("[FFmpegRecorderService] Error detecting FFmpeg:", error);
             showError(`Failed to check FFmpeg availability: ${error}`);
         }

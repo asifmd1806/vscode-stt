@@ -18,10 +18,18 @@ export class MicrophoneService {
             const devices = await this.recorderService.getAudioDevices();
             const deviceExists = devices.some(d => d.id === state.selectedDeviceId);
             if (deviceExists) {
+                // If device ID is set but name is not, try to populate the name
+                if (state.selectedDeviceId !== undefined && !state.selectedDeviceName) {
+                    const currentDevice = devices.find(d => d.id === state.selectedDeviceId);
+                    if (currentDevice) {
+                        this.stateManager.setSelectedDeviceName(currentDevice.name);
+                        logInfo(`[MicrophoneService] Populated missing device name for ID ${state.selectedDeviceId}: ${currentDevice.name}`);
+                    }
+                }
                 return true;
             }
             // Device no longer exists, clear selection
-            this.stateManager.setSelectedDeviceId(undefined);
+            this.stateManager.setSelectedDeviceId(undefined); // This will also clear the name via ExtensionStateManager
         }
 
         // Prompt for device selection
@@ -57,6 +65,7 @@ export class MicrophoneService {
 
             // Save the selected device
             this.stateManager.setSelectedDeviceId(selected.deviceId);
+            this.stateManager.setSelectedDeviceName(selected.label); // Add this line
             await this.recorderService.selectAudioDevice(selected.deviceId);
             
             logInfo(`[MicrophoneService] User selected microphone: ${selected.label} (ID: ${selected.deviceId})`);

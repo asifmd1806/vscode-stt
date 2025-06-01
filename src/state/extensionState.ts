@@ -10,8 +10,10 @@ export class ExtensionStateManager implements StateManager {
         transcriptionState: TranscriptionState.IDLE,
         currentAudioStream: null,
         selectedDeviceId: undefined,
+        selectedDeviceName: undefined,
         transcriptionHistory: [],
-        recordingStartTime: null
+        recordingStartTime: null,
+        isFfmpegAvailable: false
     };
 
     private listeners: StateChangeListener[] = [];
@@ -45,8 +47,17 @@ export class ExtensionStateManager implements StateManager {
         this.notifyListeners();
     }
 
+    setSelectedDeviceName(deviceName: string | undefined): void {
+        this.state.selectedDeviceName = deviceName;
+        logInfo(`[ExtensionState] Selected Device Name updated: ${deviceName}`);
+        this.notifyListeners();
+    }
+
     setSelectedDeviceId(deviceId: number | undefined): void {
         this.state.selectedDeviceId = deviceId;
+        if (deviceId === undefined) {
+            this.state.selectedDeviceName = undefined;
+        }
         if (this.context && deviceId !== undefined) {
             this.context.globalState.update('selectedDeviceId', deviceId);
             this.context.globalState.update('hasSelectedMicrophone', true);
@@ -76,6 +87,12 @@ export class ExtensionStateManager implements StateManager {
 
     setRecordingStartTime(time: number | null): void {
         this.state.recordingStartTime = time;
+        this.notifyListeners();
+    }
+
+    setFfmpegAvailable(isAvailable: boolean): void {
+        this.state.isFfmpegAvailable = isAvailable;
+        logInfo(`[ExtensionState] FFmpeg available status updated to: ${isAvailable}`);
         this.notifyListeners();
     }
 

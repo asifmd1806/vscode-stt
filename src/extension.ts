@@ -17,6 +17,18 @@ export async function activate(context: vscode.ExtensionContext) {
         await extensionController.initialize();
         
         logInfo('[Extension] Speech To Text STT extension activated successfully.');
+
+        // Register FFmpeg help command
+        context.subscriptions.push(vscode.commands.registerCommand('speech-to-text-stt.showFfmpegHelp', () => {
+            const ffmpegDocPath = vscode.Uri.joinPath(context.extensionUri, 'docs', 'FFMPEG.md');
+            // Attempt to show preview, fallback to opening as text document
+            vscode.commands.executeCommand('markdown.showPreview', ffmpegDocPath)
+                .then(null, (err) => { // Handle error if markdown preview fails (e.g., no markdown extension)
+                    logWarn('[Extension] Failed to open FFMPEG.md in preview, trying to open as text:', err);
+                    vscode.workspace.openTextDocument(ffmpegDocPath)
+                        .then(doc => vscode.window.showTextDocument(doc));
+                });
+        }));
         
     } catch (error) {
         logError('[Extension] Failed to activate extension:', error);

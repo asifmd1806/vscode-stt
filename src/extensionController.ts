@@ -50,7 +50,7 @@ export class ExtensionController {
         this.stateManager.setContext(context);
 
         // Initialize services
-        this.recorderService = new FFmpegRecorderService(context);
+        this.recorderService = new FFmpegRecorderService(this.stateManager, context); // Pass stateManager here
         this.microphoneService = new MicrophoneService(this.recorderService, this.stateManager);
         this.transcriptionActionsService = new TranscriptionActionsService();
         this.contextService = new ContextService();
