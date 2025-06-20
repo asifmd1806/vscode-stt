@@ -11,4 +11,5 @@ export { selectMicrophoneAction } from './selectMicrophoneAction';
 
 // History actions
 export { clearHistoryAction } from './clearHistoryAction';
-export { copyHistoryItemAction } from './copyHistoryItemAction'; 
+export { copyHistoryItemAction } from './copyHistoryItemAction';
+export { retryTranscriptionAction } from './retryTranscriptionAction'; 

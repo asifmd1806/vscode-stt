@@ -43,7 +43,8 @@ export async function transcriptionCompletedAction({
         events.emit({
             type: 'historyItemAdded',
             text: transcription,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            audioFilePath: audioFilePath
         });
 
         // Play notification sound
@@ -69,12 +70,14 @@ export async function transcriptionCompletedAction({
  */
 export async function transcriptionErrorAction({
     error,
-    stateUpdater
+    stateUpdater,
+    audioFilePath
 }: {
     error: Error;
     stateUpdater: {
         setTranscriptionState: (state: TranscriptionState) => void;
     };
+    audioFilePath?: string;
 }): Promise<void> {
     logError('[TranscriptionErrorAction] Handling transcription error:', error);
     
@@ -88,7 +91,8 @@ export async function transcriptionErrorAction({
     events.emit({
         type: 'transcriptionError',
         error: error,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        audioFilePath: audioFilePath
     });
     
     // Reset to idle after showing error state

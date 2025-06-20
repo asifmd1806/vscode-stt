@@ -76,6 +76,11 @@
                 "category": "Speech To Text"
             },
             {
+                "command": "speech-to-text-stt.retryTranscription",
+                "title": "Retry Transcription",
+                "category": "Speech To Text"
+            },
+            {
                 "command": "speech-to-text-stt.viewSavedRecordings",
                 "title": "View Saved Recordings",
                 "category": "Speech To Text"
@@ -313,6 +318,11 @@
                 {
                     "command": "speech-to-text-stt.copyHistoryItem",
                     "when": "view == sttView && viewItem == historyItem",
+                    "group": "inline"
+                },
+                {
+                    "command": "speech-to-text-stt.retryTranscription",
+                    "when": "view == sttView && viewItem == failedHistoryItem",
                     "group": "inline"
                 },
                 {

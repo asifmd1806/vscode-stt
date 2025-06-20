@@ -4,10 +4,13 @@ import { TranscriptionProvider } from '../providers/baseProvider';
 import { events } from '../events';
 import { SttEvent } from '../events/types';
 import { getTranscriptionProvider } from '../config/settings';
+import * as path from 'path';
 
 interface TranscriptionHistoryItem {
     text: string;
     timestamp: number;
+    audioFilePath?: string;
+    status?: 'success' | 'failed';
 }
 
 export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
@@ -18,6 +21,7 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     private selectedDeviceId: number = -1;
     private disposables: vscode.Disposable[] = [];
     private isTranscribing: boolean = false;
+    private isFfmpegAvailable: boolean = false;
 
     constructor(
         private readonly recorderService: IRecorderService,
@@ -25,6 +29,15 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
     ) {
         // Subscribe to events
         this.subscribeToEvents();
+        // Check FFmpeg availability
+        this.checkFfmpegAvailability();
+    }
+
+    private async checkFfmpegAvailability(): Promise<void> {
+        // Check if FFmpeg is available by trying to list devices
+        const devices = await this.recorderService.getAudioDevices();
+        this.isFfmpegAvailable = devices.length > 0 && devices[0].id !== -1;
+        this.refresh();
     }
 
     private subscribeToEvents(): void {
@@ -39,7 +52,9 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 case 'historyItemAdded':
                     this.transcriptionHistory.unshift({ 
                         text: event.text, 
-                        timestamp: event.timestamp 
+                        timestamp: event.timestamp,
+                        audioFilePath: event.audioFilePath,
+                        status: 'success'
                     });
                     this.refresh();
                     break;
@@ -66,6 +81,16 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 
                 case 'transcriptionError':
                     this.isTranscribing = false;
+                    // Add failed transcription to history if we have the file path
+                    const errorEvent = event as any; // Type assertion for now
+                    if (errorEvent.audioFilePath) {
+                        this.transcriptionHistory.unshift({
+                            text: 'Transcription failed',
+                            timestamp: event.timestamp,
+                            audioFilePath: errorEvent.audioFilePath,
+                            status: 'failed'
+                        });
+                    }
                     this.refresh();
                     break;
             }
@@ -136,18 +161,43 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
                 this.transcriptionHistory.forEach(item => {
                     const date = new Date(item.timestamp);
                     const formattedDate = date.toLocaleString();
+                    const fileName = item.audioFilePath ? path.basename(item.audioFilePath) : '';
                     const truncatedText = item.text.length > 50 ? item.text.substring(0, 50) + '...' : item.text;
+                    
+                    // Create label with file name and text
+                    const label = fileName ? `${fileName}: ${truncatedText}` : truncatedText;
                     const historyItem = new vscode.TreeItem(
-                        `${formattedDate}: ${truncatedText}`,
+                        label,
                         vscode.TreeItemCollapsibleState.None
                     );
-                    historyItem.command = {
-                        command: 'speech-to-text-stt.copyHistoryItem',
-                        title: 'Copy Transcription',
-                        arguments: [item.text]
-                    };
-                    historyItem.tooltip = `Click to copy: ${item.text}`;
-                    historyItem.contextValue = 'historyItem';
+                    
+                    // Set description to show date
+                    historyItem.description = formattedDate;
+                    
+                    // Set appropriate icon based on status
+                    if (item.status === 'failed') {
+                        historyItem.iconPath = new vscode.ThemeIcon('error');
+                        historyItem.contextValue = 'failedHistoryItem';
+                        historyItem.tooltip = `Failed transcription at ${formattedDate}\nFile: ${fileName}\nClick to retry`;
+                        // Add command to retry transcription
+                        if (item.audioFilePath) {
+                            historyItem.command = {
+                                command: 'speech-to-text-stt.retryTranscription',
+                                title: 'Retry Transcription',
+                                arguments: [item.audioFilePath]
+                            };
+                        }
+                    } else {
+                        historyItem.iconPath = new vscode.ThemeIcon('check');
+                        historyItem.command = {
+                            command: 'speech-to-text-stt.copyHistoryItem',
+                            title: 'Copy Transcription',
+                            arguments: [item.text]
+                        };
+                        historyItem.tooltip = `${formattedDate}\nFile: ${fileName}\nText: ${item.text}\nClick to copy`;
+                        historyItem.contextValue = 'historyItem';
+                    }
+                    
                     children.push(historyItem);
                 });
                 return children;
@@ -157,7 +207,25 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
 
         const items: vscode.TreeItem[] = [];
 
-        // Add the general settings item to the root
+        // Add FFmpeg status item first
+        const ffmpegStatusItem = new vscode.TreeItem(
+            this.isFfmpegAvailable ? '✅ FFmpeg: Installed' : '❌ FFmpeg: Not Installed',
+            vscode.TreeItemCollapsibleState.None
+        );
+        if (!this.isFfmpegAvailable) {
+            ffmpegStatusItem.command = {
+                command: 'vscode.open',
+                title: 'Open FFmpeg Documentation',
+                arguments: [vscode.Uri.parse('https://ffmpeg.org/download.html')]
+            };
+            ffmpegStatusItem.tooltip = 'Click to learn how to install FFmpeg';
+            ffmpegStatusItem.iconPath = new vscode.ThemeIcon('warning');
+        } else {
+            ffmpegStatusItem.iconPath = new vscode.ThemeIcon('check');
+        }
+        items.push(ffmpegStatusItem);
+
+        // Add the general settings item
         const generalSettingsItem = new vscode.TreeItem(
             '⚙️ Settings',
             vscode.TreeItemCollapsibleState.None
@@ -198,7 +266,8 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         // Add device selection item
         const devices = await this.recorderService.getAudioDevices();
         const currentDevice = devices.find((d: AudioDeviceInfo) => d.id === this.selectedDeviceId);
-        const deviceName = currentDevice ? currentDevice.label || currentDevice.name : "Default Microphone";
+        const deviceName = currentDevice ? currentDevice.label || currentDevice.name : 
+                          (this.selectedDeviceId === -1 && devices.length > 0 ? "Default Microphone" : "Not Selected");
         
         const deviceItem = new vscode.TreeItem(
             `🎤 ${deviceName}`,
@@ -244,9 +313,10 @@ export class SttViewProvider implements vscode.TreeDataProvider<vscode.TreeItem>
         // Show transcription status if in progress
         if (this.isTranscribing) {
             const transcribingItem = new vscode.TreeItem(
-                '$(sync~spin) Transcribing...',
+                'Transcribing...',
                 vscode.TreeItemCollapsibleState.None
             );
+            transcribingItem.iconPath = new vscode.ThemeIcon('sync~spin');
             transcribingItem.tooltip = 'Transcription in progress...';
             items.push(transcribingItem);
         }

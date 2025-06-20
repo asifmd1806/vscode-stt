@@ -66,6 +66,7 @@ export interface TranscriptionErrorEvent {
     type: 'transcriptionError';
     error: Error;
     timestamp: number;
+    audioFilePath?: string; // Path to the audio file that failed transcription
 }
 
 export interface TranscriptionProgressEvent {
@@ -114,6 +115,7 @@ export interface HistoryItemAddedEvent {
     type: 'historyItemAdded';
     text: string;
     timestamp: number;
+    audioFilePath?: string; // Path to the audio file for this transcription
 }
 
 export interface HistoryClearedEvent {

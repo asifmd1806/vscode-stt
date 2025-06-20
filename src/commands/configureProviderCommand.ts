@@ -171,11 +171,18 @@ export async function configureProviderCommand(context: vscode.ExtensionContext,
         // Step 3: Configure required fields
         const config: Record<string, string> = {};
         
+        // Get existing configuration to preserve values
+        const existingConfig = await getExistingConfiguration(selectedProvider);
+        
         for (const field of providerInfo.requiredFields) {
+            // Show existing value as default if available
+            const currentValue = field.isSecret ? '' : existingConfig[field.key] || '';
+            
             const value = await vscode.window.showInputBox({
                 prompt: field.displayName,
                 placeHolder: field.placeholder,
                 password: field.isSecret,
+                value: currentValue,
                 validateInput: field.validation ? (value) => {
                     if (!field.validation!(value)) {
                         return `${field.displayName} is required`;
@@ -196,16 +203,20 @@ export async function configureProviderCommand(context: vscode.ExtensionContext,
         if (providerInfo.optionalFields && providerInfo.optionalFields.length > 0) {
             const configureOptional = await vscode.window.showQuickPick([
                 { label: 'Yes', value: true },
-                { label: 'No, use defaults', value: false }
+                { label: 'No, keep existing settings', value: false }
             ], {
                 placeHolder: 'Would you like to configure optional settings?'
             });
 
             if (configureOptional?.value) {
                 for (const field of providerInfo.optionalFields) {
+                    // Show existing value as default
+                    const currentValue = existingConfig[field.key] || '';
+                    
                     const value = await vscode.window.showInputBox({
                         prompt: field.displayName,
                         placeHolder: field.placeholder,
+                        value: currentValue,
                         ignoreFocusOut: true
                     });
 
@@ -280,6 +291,21 @@ function getProviderDescription(provider: TranscriptionProvider): string {
             return 'Google Cloud Speech-to-Text with advanced features';
         default:
             return '';
+    }
+}
+
+async function getExistingConfiguration(provider: TranscriptionProvider): Promise<Record<string, any>> {
+    switch (provider) {
+        case 'elevenlabs':
+            return getElevenLabsConfig();
+        case 'openai':
+            return getOpenAIConfig();
+        case 'groq':
+            return getGroqConfig();
+        case 'google':
+            return getGoogleConfig();
+        default:
+            return {};
     }
 }
 

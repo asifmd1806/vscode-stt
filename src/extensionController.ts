@@ -19,6 +19,7 @@ import { startRecordingAction } from './actions/startRecordingAction';
 import { stopRecordingAction } from './actions/stopRecordingAction';
 import { clearHistoryAction } from './actions/clearHistoryAction';
 import { copyHistoryItemAction } from './actions/copyHistoryItemAction';
+import { retryTranscriptionAction } from './actions/retryTranscriptionAction';
 import { listSavedRecordings, openRecordingsDirectory } from './utils/fileUtils';
 import { checkAndConfigureProvider, configureProviderCommand } from './commands/configureProviderCommand';
 
@@ -271,6 +272,16 @@ export class ExtensionController {
             vscode.commands.registerCommand(
                 'speech-to-text-stt.copyHistoryItem',
                 (item: { fullText: string } | string) => copyHistoryItemAction(item)
+            ),
+
+            vscode.commands.registerCommand(
+                'speech-to-text-stt.retryTranscription',
+                (audioFilePath: string) => retryTranscriptionAction({
+                    audioFilePath,
+                    transcriptionProvider: this.transcriptionProvider,
+                    stateUpdater,
+                    context: this.context
+                })
             ),
 
             vscode.commands.registerCommand(

@@ -151,7 +151,8 @@ async function handleTranscription({
         // Handle transcription error
         await transcriptionErrorAction({
             error: result.error,
-            stateUpdater
+            stateUpdater,
+            audioFilePath: savedFilePath
         });
     }
 } 
