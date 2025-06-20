@@ -80,6 +80,7 @@ export class FFmpegRecorderService implements IRecorderService {
             } else if (os.platform() === 'win32') {
                 // Windows common locations
                 commonLocations.push(
+                    'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
                     'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
                     'C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe',
                     path.join(os.homedir(), 'ffmpeg', 'bin', 'ffmpeg.exe')
